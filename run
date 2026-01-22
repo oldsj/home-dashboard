@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -e
+
+cd "$(dirname "$0")"
+
+if [ ! -f config/credentials.yaml ]; then
+    cp config/credentials.yaml.example config/credentials.yaml
+fi
+
+echo "Dashboard: http://localhost:9753"
+echo "Edit code and it auto-reloads. Ctrl+C to stop."
+echo ""
+
+docker compose up --build --watch

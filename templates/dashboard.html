@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block body %}
+<div
+  id="dashboard"
+  class="h-screen w-screen overflow-hidden"
+  style="padding: {{ layout.padding | default(16) }}px;"
+  hx-ext="ws"
+  ws-connect="/ws"
+>
+  <!-- Dashboard grid -->
+  <div
+    class="grid h-full"
+    style="
+      grid-template-columns: repeat({{ layout.columns | default(3) }}, 1fr);
+      grid-template-rows: repeat({{ layout.rows | default(2) }}, 1fr);
+      gap: {{ layout.gap | default(16) }}px;
+    "
+  >
+    {% for widget in widgets %}
+    <div
+      id="widget-{{ widget.name }}"
+      class="widget-container bg-gray-800 rounded-xl p-4 shadow-lg overflow-hidden"
+      style="
+        grid-column: {{ widget.position.col | default(1) }} / span {{ widget.position.width | default(1) }};
+        grid-row: {{ widget.position.row | default(1) }} / span {{ widget.position.height | default(1) }};
+      "
+      hx-get="/api/widgets/{{ widget.name }}"
+      hx-trigger="every {{ widget.refresh_interval }}s"
+      hx-swap="innerHTML"
+    >
+      {{ widget.html | safe }}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+  // Handle WebSocket messages for real-time updates
+  // Note: Widget HTML is server-rendered from trusted integration templates
+  document.body.addEventListener('htmx:wsAfterMessage', function(event) {
+    try {
+      const data = JSON.parse(event.detail.message);
+      if (data.type === 'widget_update') {
+        const widget = document.getElementById('widget-' + data.integration);
+        if (widget) {
+          // Server-rendered content from trusted integration templates
+          widget.innerHTML = data.html;
+        }
+      }
+    } catch (e) {
+      // Ignore non-JSON messages (like pong)
+    }
+  });
+
+  // Keep WebSocket alive with periodic pings
+  setInterval(function() {
+    const ws = htmx.find('[ws-connect]');
+    if (ws && ws._htmx_ws) {
+      ws._htmx_ws.send('ping');
+    }
+  }, 30000);
+
+  // Reconnect on connection loss
+  document.body.addEventListener('htmx:wsClose', function(event) {
+    console.log('WebSocket closed, will reconnect...');
+    setTimeout(function() {
+      htmx.process(document.getElementById('dashboard'));
+    }, 3000);
+  });
+</script>
+{% endblock %}

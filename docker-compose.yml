@@ -1,0 +1,27 @@
+services:
+  dashboard:
+    build: .
+    ports:
+      - "9753:9753"
+    volumes:
+      - ./config:/app/config
+    environment:
+      - PYTHONUNBUFFERED=1
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./server
+          target: /app/server
+        - action: sync+restart
+          path: ./integrations
+          target: /app/integrations
+        - action: sync+restart
+          path: ./templates
+          target: /app/templates
+        - action: sync
+          path: ./static
+          target: /app/static
+        - action: rebuild
+          path: ./pyproject.toml
+        - action: rebuild
+          path: ./uv.lock
