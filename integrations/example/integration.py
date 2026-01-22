@@ -8,8 +8,19 @@ common patterns.
 
 import random
 from datetime import datetime
+from typing import Any
 
-from integrations.base import BaseIntegration
+from integrations.base import BaseIntegration, IntegrationConfig
+
+
+class ExampleConfig(IntegrationConfig):
+    """
+    Configuration model for the Example integration.
+
+    This demonstrates how to define typed configuration using Pydantic.
+    """
+
+    message: str = "Welcome to Dashboard"
 
 
 class ExampleIntegration(BaseIntegration):
@@ -24,16 +35,10 @@ class ExampleIntegration(BaseIntegration):
     display_name = "Example Widget"
     refresh_interval = 5  # Update every 5 seconds
 
-    # No credentials required for this example
-    config_schema = {
-        "message": {
-            "type": "str",
-            "required": False,
-            "default": "Welcome to Dashboard"
-        }
-    }
+    # Pydantic config model for typed validation
+    ConfigModel = ExampleConfig
 
-    async def fetch_data(self) -> dict:
+    async def fetch_data(self) -> dict[str, Any]:
         """
         Fetch data for the widget.
 

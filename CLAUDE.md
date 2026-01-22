@@ -89,3 +89,31 @@ class MyIntegration(BaseIntegration):
 - Sensitive config keys (containing api_key, token, secret, password, credentials, key) are filtered by `BaseIntegration._get_safe_config()`
 - Jinja2 autoescape is enabled
 - Credentials stored in gitignored YAML, never in code
+
+## AI-Friendly Code Guidelines
+
+This project follows practices that make the codebase AI-agent friendly. Maintain these standards:
+
+### 1. Test Coverage
+- **Target 100% coverage** - Every line should have executable examples
+- Run with coverage: `pytest --cov=server --cov=integrations --cov-report=term-missing`
+- Write tests for all new code before or alongside implementation
+- Use `tests/conftest.py` fixtures for isolation
+
+### 2. Intentional File Organization
+- **Small, focused files** - Keep files under 200 lines when possible
+- **Semantic paths** - File location should indicate purpose
+- **One concern per file** - Don't mix unrelated functionality
+- Current structure: `server/` (backend), `integrations/` (plugins), `templates/` (views), `config/` (settings)
+
+### 3. Fast, Ephemeral, Concurrent Environments
+- **Docker + uv** for reproducible builds
+- **Isolated test fixtures** - Use `TemporaryDirectory` and pytest fixtures
+- **No shared state** between tests
+- Tests must run independently and in any order
+
+### 4. End-to-End Type Systems
+- **Type all function signatures** - Parameters and return types
+- **Use type hints consistently** - `Dict`, `List`, `Optional`, `Type`, etc.
+- **Validate at boundaries** - Config schemas, API inputs
+- Future: Add mypy strict mode, consider Pydantic models for config

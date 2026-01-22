@@ -8,23 +8,22 @@ inherits from BaseIntegration.
 
 import importlib
 import logging
-import pkgutil
 from pathlib import Path
-from typing import Dict, Type
+from typing import Any
 
 from .base import BaseIntegration
 
 logger = logging.getLogger(__name__)
 
 
-def discover_integrations() -> Dict[str, Type[BaseIntegration]]:
+def discover_integrations() -> dict[str, type[BaseIntegration]]:
     """
     Discover all integrations in the integrations directory.
 
     Returns:
         Dict mapping integration name to integration class
     """
-    integrations = {}
+    integrations: dict[str, type[BaseIntegration]] = {}
     integrations_dir = Path(__file__).parent
 
     for item in integrations_dir.iterdir():
@@ -51,7 +50,7 @@ def discover_integrations() -> Dict[str, Type[BaseIntegration]]:
                     integrations[attr.name] = attr
                     break
 
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to load integration '%s'", item.name)
 
     return integrations
@@ -59,8 +58,8 @@ def discover_integrations() -> Dict[str, Type[BaseIntegration]]:
 
 def load_integration(
     name: str,
-    config: dict,
-    integrations: Dict[str, Type[BaseIntegration]] = None
+    config: dict[str, Any],
+    integrations: dict[str, type[BaseIntegration]] | None = None
 ) -> BaseIntegration:
     """
     Load and instantiate an integration by name.

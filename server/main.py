@@ -8,13 +8,12 @@ for real-time widget updates.
 import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Dict, Set
+from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-
-logger = logging.getLogger(__name__)
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
@@ -23,15 +22,17 @@ from integrations import discover_integrations, load_integration
 from integrations.base import BaseIntegration
 from server.config import config_loader
 
+logger = logging.getLogger(__name__)
+
 
 # Store active WebSocket connections
-active_connections: Set[WebSocket] = set()
+active_connections: set[WebSocket] = set()
 
 # Store loaded integration instances
-loaded_integrations: Dict[str, BaseIntegration] = {}
+loaded_integrations: dict[str, BaseIntegration] = {}
 
 # Background tasks
-background_tasks: Set[asyncio.Task] = set()
+background_tasks: set[asyncio.Task[None]] = set()
 
 
 def setup_templates() -> Environment:
@@ -83,7 +84,7 @@ async def refresh_widget(integration: BaseIntegration) -> None:
         await asyncio.sleep(integration.refresh_interval)
 
 
-def load_all_integrations() -> Dict[str, BaseIntegration]:
+def load_all_integrations() -> dict[str, BaseIntegration]:
     """Load all configured integrations."""
     integrations = {}
     discovered = discover_integrations()
@@ -112,7 +113,7 @@ def load_all_integrations() -> Dict[str, BaseIntegration]:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler - start/stop background tasks."""
     global loaded_integrations
 
@@ -153,7 +154,7 @@ app = create_app()
 
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard():
+async def dashboard() -> str:
     """Render the main dashboard page."""
     dashboard_config = config_loader.get_dashboard_config()
     layout_config = config_loader.get_layout_config()
@@ -191,7 +192,7 @@ async def dashboard():
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time widget updates."""
     await websocket.accept()
     active_connections.add(websocket)
@@ -210,7 +211,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 @app.get("/api/widgets/{integration_name}", response_class=HTMLResponse)
-async def get_widget(integration_name: str):
+async def get_widget(integration_name: str) -> HTMLResponse:
     """Get the current HTML for a specific widget."""
     if integration_name not in loaded_integrations:
         return HTMLResponse(
@@ -232,7 +233,7 @@ async def get_widget(integration_name: str):
 
 
 @app.get("/api/integrations")
-async def list_integrations():
+async def list_integrations() -> dict[str, dict[str, Any]]:
     """List all available integrations."""
     discovered = discover_integrations()
     return {
