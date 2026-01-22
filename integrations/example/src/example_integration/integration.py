@@ -67,7 +67,7 @@ class ExampleIntegration(BaseIntegration):
         temp = 0.0
         try:
             temps = psutil.sensors_temperatures()
-            if temps:
+            if temps:  # pragma: no cover - requires hardware temp sensors
                 # Get first available temperature sensor
                 first_sensor = next(iter(temps.values()))
                 temp = first_sensor[0].current if first_sensor else 0.0
@@ -78,7 +78,7 @@ class ExampleIntegration(BaseIntegration):
         # Add to rolling history
         self._cpu_history.append(cpu_percent)
         self._memory_history.append(memory_percent)
-        if temp > 0:
+        if temp > 0:  # pragma: no cover - requires hardware temp sensors
             self._temp_history.append(temp)
 
         # Calculate rolling averages

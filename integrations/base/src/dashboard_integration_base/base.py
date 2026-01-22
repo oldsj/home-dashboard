@@ -150,7 +150,7 @@ class BaseIntegration(ABC):
         Returns:
             Dict containing data to pass to the widget template
         """
-        pass
+        pass  # pragma: no cover - abstract method
 
     def _get_safe_config(self) -> dict[str, Any]:
         """

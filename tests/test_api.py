@@ -153,7 +153,6 @@ class TestDashboardEdgeCases:
 
     def test_dashboard_with_unloaded_widget(self, client: TestClient, monkeypatch):
         """Test dashboard when widget is configured but not loaded."""
-        from server.main import loaded_integrations
         from server.config import get_settings, WidgetConfig
 
         original_get_settings = get_settings
@@ -166,7 +165,8 @@ class TestDashboardEdgeCases:
             ]
             return settings
 
-        monkeypatch.setattr("server.config.get_settings", mock_get_settings)
+        # Patch where the function is used, not where it's defined
+        monkeypatch.setattr("server.main.get_settings", mock_get_settings)
 
         response = client.get("/")
         # Dashboard should still load successfully even with unloaded widgets

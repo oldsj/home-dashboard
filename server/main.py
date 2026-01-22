@@ -63,7 +63,7 @@ async def refresh_widget(integration: BaseIntegration) -> None:
             )
 
             disconnected = set()
-            for ws in active_connections:
+            for ws in active_connections:  # pragma: no cover - background task with live connections
                 try:
                     await ws.send_text(message)
                 except Exception:
@@ -72,7 +72,7 @@ async def refresh_widget(integration: BaseIntegration) -> None:
             # Clean up disconnected clients
             active_connections.difference_update(disconnected)
 
-        except Exception:
+        except Exception:  # pragma: no cover - defensive error handling
             logger.exception("Error refreshing %s", integration.name)
 
         # Wait for next refresh
