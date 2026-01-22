@@ -161,3 +161,21 @@ class TestConfigModels:
         assert dashboard.title == "Home Dashboard"
         assert dashboard.theme == "dark"
         assert dashboard.refresh_interval == 30
+
+    def test_widget_config_with_position(self):
+        """Test WidgetConfig with position settings."""
+        from server.config import WidgetConfig
+
+        widget = WidgetConfig(
+            integration="test",
+            position={"column": 1, "row": 2, "width": 3, "height": 1}
+        )
+        assert widget.position == {"column": 1, "row": 2, "width": 3, "height": 1}
+        assert widget.enabled is True
+
+    def test_widget_config_with_enabled_false(self):
+        """Test WidgetConfig with enabled=False."""
+        from server.config import WidgetConfig
+
+        widget = WidgetConfig(integration="test", enabled=False)
+        assert widget.enabled is False
