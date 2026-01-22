@@ -1,14 +1,22 @@
 """
-Configuration loader for the dashboard.
+Configuration management using pydantic-settings.
 
-Handles loading and validating YAML configuration files.
+Provides type-safe configuration with YAML file support and
+environment variable overrides for 12-factor app compliance.
 """
 
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+    YamlConfigSettingsSource,
+)
 
 
 class WidgetConfig(BaseModel):
@@ -16,9 +24,9 @@ class WidgetConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    name: str
+    integration: str
     enabled: bool = True
-    position: int = 0
+    position: dict[str, Any] = {}
 
 
 class LayoutConfig(BaseModel):
@@ -27,6 +35,9 @@ class LayoutConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     columns: int = 3
+    rows: int = 2
+    gap: int = 16
+    padding: int = 16
     widgets: list[WidgetConfig] = []
 
 
@@ -38,115 +49,109 @@ class DashboardConfig(BaseModel):
     title: str = "Home Dashboard"
     theme: str = "dark"
     refresh_interval: int = 30
+    resolution: str = "1920x1080"
 
 
-class AppConfig(BaseModel):
-    """Root configuration model."""
+# Config directory (can be overridden for testing)
+_config_dir: Path | None = None
 
-    model_config = ConfigDict(extra="allow")
+
+def set_config_dir(path: Path | None) -> None:
+    """Set the config directory (for testing)."""
+    global _config_dir
+    _config_dir = path
+    # Clear cached settings when directory changes
+    get_settings.cache_clear()
+    _get_credentials_data.cache_clear()
+
+
+def get_config_dir() -> Path:
+    """Get the config directory path."""
+    if _config_dir is not None:
+        return _config_dir
+    return Path(__file__).parent.parent / "config"
+
+
+class AppSettings(BaseSettings):
+    """Application settings loaded from YAML with env var support."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="DASHBOARD_",
+        env_nested_delimiter="__",
+        extra="allow",
+    )
 
     dashboard: DashboardConfig = DashboardConfig()
     layout: LayoutConfig = LayoutConfig()
 
-
-class ConfigLoader:
-    """Loads and manages dashboard configuration."""
-
-    def __init__(self, config_dir: Path | None = None) -> None:
-        """
-        Initialize the config loader.
-
-        Args:
-            config_dir: Path to config directory. Defaults to project config/
-        """
-        if config_dir is None:
-            config_dir = Path(__file__).parent.parent / "config"
-        self.config_dir = config_dir
-        self._config: dict[str, Any] | None = None
-        self._credentials: dict[str, Any] | None = None
-        self._app_config: AppConfig | None = None
-
-    def load_config(self) -> dict[str, Any]:
-        """
-        Load the main configuration file.
-
-        Returns:
-            Parsed config dict
-        """
-        if self._config is None:
-            config_file = self.config_dir / "config.yaml"
-            if not config_file.exists():
-                raise FileNotFoundError(f"Config file not found: {config_file}")
-
-            with open(config_file) as f:
-                self._config = yaml.safe_load(f) or {}
-
-        return self._config
-
-    def get_app_config(self) -> AppConfig:
-        """
-        Load and validate configuration using Pydantic models.
-
-        Returns:
-            Validated AppConfig instance
-        """
-        if self._app_config is None:
-            raw_config = self.load_config()
-            self._app_config = AppConfig(**raw_config)
-        return self._app_config
-
-    def load_credentials(self) -> dict[str, Any]:
-        """
-        Load the credentials file.
-
-        Returns:
-            Parsed credentials dict (empty dict if file doesn't exist)
-        """
-        if self._credentials is None:
-            creds_file = self.config_dir / "credentials.yaml"
-            if creds_file.exists():
-                with open(creds_file) as f:
-                    self._credentials = yaml.safe_load(f) or {}
-            else:
-                self._credentials = {}
-
-        return self._credentials
-
-    def get_dashboard_config(self) -> dict[str, Any]:
-        """Get dashboard-specific configuration."""
-        config = self.load_config()
-        return dict(config.get("dashboard", {}))
-
-    def get_layout_config(self) -> dict[str, Any]:
-        """Get layout configuration."""
-        config = self.load_config()
-        return dict(config.get("layout", {}))
-
-    def get_widget_configs(self) -> list[dict[str, Any]]:
-        """Get list of widget configurations."""
-        layout = self.get_layout_config()
-        widgets = layout.get("widgets", [])
-        return list(widgets) if widgets else []
-
-    def get_integration_credentials(self, integration_name: str) -> dict[str, Any]:
-        """
-        Get credentials for a specific integration.
-
-        Args:
-            integration_name: Name of the integration
-
-        Returns:
-            Integration credentials dict (empty if not configured)
-        """
-        credentials = self.load_credentials()
-        return dict(credentials.get(integration_name, {}))
-
-    def reload(self) -> None:
-        """Force reload of all configuration files."""
-        self._config = None
-        self._credentials = None
-        self._app_config = None
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Customize settings sources: env vars > YAML > defaults."""
+        yaml_file = get_config_dir() / "config.yaml"
+        return (
+            init_settings,
+            env_settings,
+            YamlConfigSettingsSource(settings_cls, yaml_file=yaml_file),
+        )
 
 
-# Global config loader instance
-config_loader = ConfigLoader()
+@lru_cache
+def get_settings() -> AppSettings:
+    """
+    Get application settings (cached).
+
+    Returns:
+        AppSettings instance with config from YAML and env vars
+    """
+    return AppSettings()
+
+
+@lru_cache
+def _get_credentials_data() -> dict[str, Any]:
+    """Load raw credentials from YAML file (cached)."""
+    creds_file = get_config_dir() / "credentials.yaml"
+    if creds_file.exists():
+        with open(creds_file) as f:
+            return yaml.safe_load(f) or {}
+    return {}
+
+
+def get_credentials(integration_name: str) -> dict[str, Any]:
+    """
+    Get credentials for an integration.
+
+    Supports environment variable overrides with DASHBOARD_CREDS_{INTEGRATION}_{KEY} format.
+    For example: DASHBOARD_CREDS_EXAMPLE_API_KEY overrides example.api_key
+
+    Args:
+        integration_name: Name of the integration
+
+    Returns:
+        Credentials dict for the integration
+    """
+    import os
+
+    # Start with YAML credentials
+    creds = dict(_get_credentials_data().get(integration_name, {}))
+
+    # Apply environment variable overrides
+    env_prefix = f"DASHBOARD_CREDS_{integration_name.upper()}_"
+    for key, value in os.environ.items():
+        if key.startswith(env_prefix):
+            cred_key = key[len(env_prefix) :].lower()
+            creds[cred_key] = value
+
+    return creds
+
+
+def reload_settings() -> None:
+    """Force reload all settings."""
+    get_settings.cache_clear()
+    _get_credentials_data.cache_clear()

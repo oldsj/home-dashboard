@@ -20,7 +20,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from integrations import discover_integrations, load_integration
 from integrations.base import BaseIntegration
-from server.config import config_loader
+from server.config import get_credentials, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -83,10 +83,10 @@ def load_all_integrations() -> dict[str, BaseIntegration]:
     """Load all configured integrations."""
     integrations = {}
     discovered = discover_integrations()
-    widget_configs = config_loader.get_widget_configs()
+    settings = get_settings()
 
-    for widget_config in widget_configs:
-        integration_name = widget_config.get("integration")
+    for widget_config in settings.layout.widgets:
+        integration_name = widget_config.integration
         if not integration_name:
             continue
 
@@ -98,7 +98,7 @@ def load_all_integrations() -> dict[str, BaseIntegration]:
             continue  # Already loaded
 
         try:
-            credentials = config_loader.get_integration_credentials(integration_name)
+            credentials = get_credentials(integration_name)
             integration = load_integration(integration_name, credentials, discovered)
             integrations[integration_name] = integration
         except Exception:
@@ -151,14 +151,12 @@ app = create_app()
 @app.get("/", response_class=HTMLResponse)
 async def dashboard() -> str:
     """Render the main dashboard page."""
-    dashboard_config = config_loader.get_dashboard_config()
-    layout_config = config_loader.get_layout_config()
-    widget_configs = config_loader.get_widget_configs()
+    settings = get_settings()
 
     # Pre-render all widgets with initial data
     widgets = []
-    for widget_config in widget_configs:
-        integration_name = widget_config.get("integration")
+    for widget_config in settings.layout.widgets:
+        integration_name = widget_config.integration
         if integration_name not in loaded_integrations:
             continue
 
@@ -175,15 +173,15 @@ async def dashboard() -> str:
                 "name": integration_name,
                 "display_name": integration.display_name,
                 "html": html,
-                "position": widget_config.get("position", {}),
+                "position": widget_config.position,
                 "refresh_interval": integration.refresh_interval,
             }
         )
 
     template = template_env.get_template("dashboard.html")
     return template.render(
-        title=dashboard_config.get("title", "Dashboard"),
-        layout=layout_config,
+        title=settings.dashboard.title,
+        layout=settings.layout.model_dump(),
         widgets=widgets,
     )
 

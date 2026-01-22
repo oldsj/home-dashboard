@@ -49,11 +49,13 @@ def temp_config_dir() -> Generator[Path, None, None]:
 
 
 @pytest.fixture
-def config_loader(temp_config_dir: Path):
-    """Create a ConfigLoader with the temp config directory."""
-    from server.config import ConfigLoader
+def setup_config(temp_config_dir: Path) -> Generator[Path, None, None]:
+    """Set up config directory for testing and clean up after."""
+    from server.config import set_config_dir
 
-    return ConfigLoader(config_dir=temp_config_dir)
+    set_config_dir(temp_config_dir)
+    yield temp_config_dir
+    set_config_dir(None)
 
 
 @pytest.fixture
