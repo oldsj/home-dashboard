@@ -1,0 +1,10 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dashboard-integration-base"
+version = "0.1.0"
+description = "Base class and utilities for dashboard integrations"
+requires-python = ">=3.13"
+dependencies = ["jinja2>=3.1.6", "pydantic>=2.12.5"]

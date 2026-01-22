@@ -1,0 +1,13 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "example-integration"
+version = "0.1.0"
+description = "Example integration demonstrating dashboard integration pattern"
+requires-python = ">=3.13"
+dependencies = ["dashboard-integration-base>=0.1.0", "psutil>=7.2.1"]
+
+[tool.uv.sources]
+dashboard-integration-base = { workspace = true }
