@@ -2,7 +2,7 @@ services:
   dashboard:
     build: .
     ports:
-      - "9753:9753"
+      - 9753:9753
     volumes:
       - ./config:/app/config
     environment:

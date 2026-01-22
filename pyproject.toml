@@ -4,21 +4,17 @@ version = "0.1.0"
 description = "Lightweight, AI-agent-friendly dashboard for Raspberry Pi"
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi>=0.128.0",
-    "httpx>=0.28.1",
-    "jinja2>=3.1.6",
-    "pydantic>=2.12.5",
-    "pyyaml>=6.0.3",
-    "uvicorn[standard]>=0.40.0",
-    "websockets>=16.0",
+  "fastapi>=0.128.0",
+  "httpx>=0.28.1",
+  "jinja2>=3.1.6",
+  "pydantic>=2.12.5",
+  "pyyaml>=6.0.3",
+  "uvicorn[standard]>=0.40.0",
+  "websockets>=16.0",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "pytest-asyncio>=0.24",
-    "httpx>=0.28.1",
-]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "httpx>=0.28.1"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -27,11 +23,11 @@ asyncio_default_fixture_loop_scope = "function"
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
-    "pytest>=9.0.2",
-    "pytest-asyncio>=1.3.0",
-    "pytest-cov>=7.0.0",
-    "ty>=0.0.13",
+  "httpx>=0.28.1",
+  "pytest>=9.0.2",
+  "pytest-asyncio>=1.3.0",
+  "pytest-cov>=7.0.0",
+  "ty>=0.0.13",
 ]
 
 [tool.ty.environment]
@@ -50,12 +46,12 @@ omit = ["*/tests/*", "*/__pycache__/*"]
 
 [tool.coverage.report]
 exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if __name__ == .__main__.:",
-    "if TYPE_CHECKING:",
+  "pragma: no cover",
+  "def __repr__",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
 ]
 show_missing = true
 fail_under = 80

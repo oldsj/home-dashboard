@@ -68,7 +68,12 @@ class BaseIntegration(ABC):
 
     # Keys that should never be exposed to templates
     _sensitive_keys: ClassVar[set[str]] = {
-        "api_key", "token", "secret", "password", "credentials", "key"
+        "api_key",
+        "token",
+        "secret",
+        "password",
+        "credentials",
+        "key",
     }
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -114,8 +119,7 @@ class BaseIntegration(ABC):
         if self._template_env is None:
             template_dir = Path(__file__).parent / self.name
             self._template_env = Environment(
-                loader=FileSystemLoader(str(template_dir)),
-                autoescape=True
+                loader=FileSystemLoader(str(template_dir)), autoescape=True
             )
         return self._template_env
 

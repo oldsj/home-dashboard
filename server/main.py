@@ -38,10 +38,7 @@ background_tasks: set[asyncio.Task[None]] = set()
 def setup_templates() -> Environment:
     """Set up Jinja2 template environment."""
     templates_dir = Path(__file__).parent.parent / "templates"
-    return Environment(
-        loader=FileSystemLoader(str(templates_dir)),
-        autoescape=True
-    )
+    return Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=True)
 
 
 template_env = setup_templates()
@@ -61,11 +58,9 @@ async def refresh_widget(integration: BaseIntegration) -> None:
             html = integration.render_widget(data)
 
             # Broadcast to all connected clients
-            message = json.dumps({
-                "type": "widget_update",
-                "integration": integration.name,
-                "html": html
-            })
+            message = json.dumps(
+                {"type": "widget_update", "integration": integration.name, "html": html}
+            )
 
             disconnected = set()
             for ws in active_connections:
@@ -77,7 +72,7 @@ async def refresh_widget(integration: BaseIntegration) -> None:
             # Clean up disconnected clients
             active_connections.difference_update(disconnected)
 
-        except Exception as e:
+        except Exception:
             logger.exception("Error refreshing %s", integration.name)
 
         # Wait for next refresh
@@ -106,7 +101,7 @@ def load_all_integrations() -> dict[str, BaseIntegration]:
             credentials = config_loader.get_integration_credentials(integration_name)
             integration = load_integration(integration_name, credentials, discovered)
             integrations[integration_name] = integration
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to load integration '%s'", integration_name)
 
     return integrations
@@ -139,7 +134,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Home Dashboard",
         description="Lightweight, AI-agent-friendly dashboard",
-        lifespan=lifespan
+        lifespan=lifespan,
     )
 
     # Mount static files
@@ -171,23 +166,25 @@ async def dashboard() -> str:
         try:
             data = await integration.fetch_data()
             html = integration.render_widget(data)
-        except Exception as e:
+        except Exception:
             logger.exception("Error loading widget %s", integration_name)
             html = f'<div class="text-red-500">Error loading {integration_name}</div>'
 
-        widgets.append({
-            "name": integration_name,
-            "display_name": integration.display_name,
-            "html": html,
-            "position": widget_config.get("position", {}),
-            "refresh_interval": integration.refresh_interval
-        })
+        widgets.append(
+            {
+                "name": integration_name,
+                "display_name": integration.display_name,
+                "html": html,
+                "position": widget_config.get("position", {}),
+                "refresh_interval": integration.refresh_interval,
+            }
+        )
 
     template = template_env.get_template("dashboard.html")
     return template.render(
         title=dashboard_config.get("title", "Dashboard"),
         layout=layout_config,
-        widgets=widgets
+        widgets=widgets,
     )
 
 
@@ -216,7 +213,7 @@ async def get_widget(integration_name: str) -> HTMLResponse:
     if integration_name not in loaded_integrations:
         return HTMLResponse(
             content=f'<div class="text-red-500">Unknown integration: {integration_name}</div>',
-            status_code=404
+            status_code=404,
         )
 
     integration = loaded_integrations[integration_name]
@@ -224,11 +221,11 @@ async def get_widget(integration_name: str) -> HTMLResponse:
         data = await integration.fetch_data()
         html = integration.render_widget(data)
         return HTMLResponse(content=html)
-    except Exception as e:
+    except Exception:
         logger.exception("Error fetching widget %s", integration_name)
         return HTMLResponse(
             content='<div class="text-red-500">Error loading widget</div>',
-            status_code=500
+            status_code=500,
         )
 
 
@@ -240,7 +237,7 @@ async def list_integrations() -> dict[str, dict[str, Any]]:
         name: {
             "display_name": cls.display_name,
             "refresh_interval": cls.refresh_interval,
-            "loaded": name in loaded_integrations
+            "loaded": name in loaded_integrations,
         }
         for name, cls in discovered.items()
     }

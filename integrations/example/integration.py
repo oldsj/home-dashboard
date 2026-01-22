@@ -56,5 +56,5 @@ class ExampleIntegration(BaseIntegration):
                 {"label": "CPU", "value": random.randint(10, 90), "unit": "%"},
                 {"label": "Memory", "value": random.randint(30, 80), "unit": "%"},
                 {"label": "Temp", "value": random.randint(40, 70), "unit": "°C"},
-            ]
+            ],
         }

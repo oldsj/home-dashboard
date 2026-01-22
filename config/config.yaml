@@ -2,15 +2,15 @@
 # This file defines the dashboard layout and enabled integrations
 
 dashboard:
-  title: "Home Dashboard"
-  refresh_interval: 30  # global default in seconds
-  resolution: "1920x1080"
+  title: Home Dashboard
+  refresh_interval: 30 # global default in seconds
+  resolution: 1920x1080
 
 layout:
   columns: 3
   rows: 2
-  gap: 16  # pixels between widgets
-  padding: 16  # pixels around edge
+  gap: 16 # pixels between widgets
+  padding: 16 # pixels around edge
   widgets:
     - integration: example
       position:

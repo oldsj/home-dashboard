@@ -8,11 +8,11 @@ A lightweight, AI-agent-friendly dashboard designed for Raspberry Pi. Makes it t
 ./run
 ```
 
-Opens at http://localhost:9753. Edit any code and it auto-reloads.
+Opens at <http://localhost:9753>. Edit any code and it auto-reloads.
 
 ## Project Structure
 
-```
+```text
 dashboard/
 ├── config/
 │   ├── config.yaml           # Dashboard layout, enabled integrations
@@ -124,17 +124,17 @@ The integration will be auto-discovered on startup.
 
 ### Required Class Attributes
 
-| Attribute | Type | Description |
-|-----------|------|-------------|
-| `name` | str | Unique identifier (lowercase, no spaces) |
-| `display_name` | str | Human-readable name |
+| Attribute      | Type | Description                              |
+| -------------- | ---- | ---------------------------------------- |
+| `name`         | str  | Unique identifier (lowercase, no spaces) |
+| `display_name` | str  | Human-readable name                      |
 
 ### Optional Class Attributes
 
-| Attribute | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `refresh_interval` | int | 30 | Seconds between data fetches |
-| `config_schema` | dict | {} | Schema for required/optional config |
+| Attribute          | Type | Default | Description                         |
+| ------------------ | ---- | ------- | ----------------------------------- |
+| `refresh_interval` | int  | 30      | Seconds between data fetches        |
+| `config_schema`    | dict | {}      | Schema for required/optional config |
 
 ### Required Methods
 
@@ -177,21 +177,21 @@ config_schema = {
 ```yaml
 dashboard:
   title: "Home Dashboard"
-  refresh_interval: 30    # Global default (can be overridden per-integration)
+  refresh_interval: 30 # Global default (can be overridden per-integration)
   resolution: "1920x1080"
 
 layout:
-  columns: 3              # Number of grid columns
-  rows: 2                 # Number of grid rows
-  gap: 16                 # Pixels between widgets
-  padding: 16             # Pixels around edge
+  columns: 3 # Number of grid columns
+  rows: 2 # Number of grid rows
+  gap: 16 # Pixels between widgets
+  padding: 16 # Pixels around edge
   widgets:
     - integration: example
       position:
-        row: 1            # Grid row (1-indexed)
-        col: 1            # Grid column (1-indexed)
-        width: 1          # Number of columns to span
-        height: 1         # Number of rows to span
+        row: 1 # Grid row (1-indexed)
+        col: 1 # Grid column (1-indexed)
+        width: 1 # Number of columns to span
+        height: 1 # Number of rows to span
 ```
 
 ### Widget Positioning
@@ -204,7 +204,8 @@ Widgets are positioned using CSS Grid. The `position` object controls placement:
 - `height`: Number of rows to span
 
 Example for a 3x2 grid:
-```
+
+```text
 ┌─────────┬─────────┬─────────┐
 │  (1,1)  │  (1,2)  │  (1,3)  │
 ├─────────┼─────────┼─────────┤
@@ -214,12 +215,12 @@ Example for a 3x2 grid:
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | Main dashboard HTML |
-| `/ws` | WebSocket | Real-time widget updates |
-| `/api/widgets/{name}` | GET | Get widget HTML by integration name |
-| `/api/integrations` | GET | List all available integrations |
+| Endpoint              | Method    | Description                         |
+| --------------------- | --------- | ----------------------------------- |
+| `/`                   | GET       | Main dashboard HTML                 |
+| `/ws`                 | WebSocket | Real-time widget updates            |
+| `/api/widgets/{name}` | GET       | Get widget HTML by integration name |
+| `/api/integrations`   | GET       | List all available integrations     |
 
 ## Running on Raspberry Pi
 

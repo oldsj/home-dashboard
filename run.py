@@ -23,20 +23,13 @@ sys.path.insert(0, str(project_root))
 def main():
     parser = argparse.ArgumentParser(description="Run the dashboard server")
     parser.add_argument(
-        "--host",
-        default="0.0.0.0",
-        help="Host to bind to (default: 0.0.0.0)"
+        "--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)"
     )
     parser.add_argument(
-        "--port",
-        type=int,
-        default=9753,
-        help="Port to bind to (default: 8000)"
+        "--port", type=int, default=9753, help="Port to bind to (default: 8000)"
     )
     parser.add_argument(
-        "--reload",
-        action="store_true",
-        help="Enable auto-reload on code changes"
+        "--reload", action="store_true", help="Enable auto-reload on code changes"
     )
 
     args = parser.parse_args()
@@ -51,7 +44,7 @@ def main():
         host=args.host,
         port=args.port,
         reload=args.reload,
-        log_level="info"
+        log_level="info",
     )
 
 

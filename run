@@ -3,8 +3,8 @@ set -e
 
 cd "$(dirname "$0")"
 
-if [ ! -f config/credentials.yaml ]; then
-    cp config/credentials.yaml.example config/credentials.yaml
+if [[ ! -f config/credentials.yaml ]]; then
+	cp config/credentials.yaml.example config/credentials.yaml
 fi
 
 echo "Dashboard: http://localhost:9753"

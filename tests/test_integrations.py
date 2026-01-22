@@ -1,9 +1,5 @@
 """Tests for integration discovery and base class."""
 
-import tempfile
-from pathlib import Path
-from typing import Any, Dict
-
 import pytest
 
 from integrations import discover_integrations, load_integration

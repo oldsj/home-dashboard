@@ -59,7 +59,7 @@ def discover_integrations() -> dict[str, type[BaseIntegration]]:
 def load_integration(
     name: str,
     config: dict[str, Any],
-    integrations: dict[str, type[BaseIntegration]] | None = None
+    integrations: dict[str, type[BaseIntegration]] | None = None,
 ) -> BaseIntegration:
     """
     Load and instantiate an integration by name.

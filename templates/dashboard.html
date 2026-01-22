@@ -1,8 +1,5 @@
-{% extends "base.html" %}
-
-{% block title %}{{ title }}{% endblock %}
-
-{% block body %}
+{% extends "base.html" %} {% block title %}{{ title }}{% endblock %} {% block
+body %}
 <div
   id="dashboard"
   class="h-screen w-screen overflow-hidden"
@@ -40,11 +37,11 @@
 <script>
   // Handle WebSocket messages for real-time updates
   // Note: Widget HTML is server-rendered from trusted integration templates
-  document.body.addEventListener('htmx:wsAfterMessage', function(event) {
+  document.body.addEventListener("htmx:wsAfterMessage", function (event) {
     try {
       const data = JSON.parse(event.detail.message);
-      if (data.type === 'widget_update') {
-        const widget = document.getElementById('widget-' + data.integration);
+      if (data.type === "widget_update") {
+        const widget = document.getElementById("widget-" + data.integration);
         if (widget) {
           // Server-rendered content from trusted integration templates
           widget.innerHTML = data.html;
@@ -56,18 +53,18 @@
   });
 
   // Keep WebSocket alive with periodic pings
-  setInterval(function() {
-    const ws = htmx.find('[ws-connect]');
+  setInterval(function () {
+    const ws = htmx.find("[ws-connect]");
     if (ws && ws._htmx_ws) {
-      ws._htmx_ws.send('ping');
+      ws._htmx_ws.send("ping");
     }
   }, 30000);
 
   // Reconnect on connection loss
-  document.body.addEventListener('htmx:wsClose', function(event) {
-    console.log('WebSocket closed, will reconnect...');
-    setTimeout(function() {
-      htmx.process(document.getElementById('dashboard'));
+  document.body.addEventListener("htmx:wsClose", function (event) {
+    console.log("WebSocket closed, will reconnect...");
+    setTimeout(function () {
+      htmx.process(document.getElementById("dashboard"));
     }, 3000);
   });
 </script>
