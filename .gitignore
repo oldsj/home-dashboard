@@ -12,6 +12,11 @@ env/
 .venv/
 .env
 
+# Testing
+.coverage
+coverage.xml
+htmlcov/
+
 # IDE
 .idea/
 .vscode/
