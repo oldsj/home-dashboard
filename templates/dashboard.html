@@ -24,9 +24,6 @@ body %}
         grid-column: {{ widget.position.col | default(1) }} / span {{ widget.position.width | default(1) }};
         grid-row: {{ widget.position.row | default(1) }} / span {{ widget.position.height | default(1) }};
       "
-      hx-get="/api/widgets/{{ widget.name }}"
-      hx-trigger="every {{ widget.refresh_interval }}s"
-      hx-swap="innerHTML"
     >
       {{ widget.html | safe }}
     </div>
