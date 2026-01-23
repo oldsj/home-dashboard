@@ -294,22 +294,20 @@ class UniFiProtectIntegration(BaseIntegration):
         unsubscribe = self._unifi_client._client.subscribe_websocket(websocket_callback)
 
         try:
-            # Stream events as they arrive
+            # Stream events as they arrive (no polling, pure event-driven)
             while True:
-                # Wait for next event with timeout to periodically refresh
-                try:
-                    msg = await asyncio.wait_for(event_queue.get(), timeout=30.0)
+                msg = await event_queue.get()
 
-                    # Check if message is related to cameras or motion events
-                    # The message structure varies, but we'll refresh on any camera-related update
-                    if msg:
-                        logger.debug("Received WebSocket event, refreshing camera data")
-                        yield await self.fetch_data()
+                if not msg:
+                    continue
 
-                except asyncio.TimeoutError:
-                    # No events in 30s, yield current state anyway
-                    logger.debug("No camera events, yielding current state")
-                    yield await self.fetch_data()
+                # Skip heartbeats/pings - no need to re-render
+                action = getattr(msg, "action", None)
+                if action in ("ping", "heartbeat"):
+                    continue
+
+                logger.debug(f"Camera event: {type(msg).__name__}")
+                yield await self.fetch_data()
 
         finally:
             # Clean up subscription

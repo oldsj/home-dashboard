@@ -93,12 +93,6 @@
           style="display: {{ 'block' if data.default_stream_type == 'hls' else 'none' }}"
         ></video>
 
-        {# Loading overlay #}
-        <div
-          class="absolute inset-0 flex items-center justify-center bg-gray-900/80 loading-overlay"
-        >
-          <div class="text-gray-400 text-sm">Loading...</div>
-        </div>
         {% else %}
         <div
           class="absolute inset-0 flex items-center justify-center text-gray-500 text-sm"
@@ -135,10 +129,17 @@
 </div>
 
 <script>
+  // Track connected cameras globally - survives DOM updates
+  window._connectedCameras = window._connectedCameras || new Set();
+
+  // Store loading overlays globally so they survive DOM morphs
+  window._loadingOverlays = window._loadingOverlays || new Map();
+
   // WebRTC stream management
   class CameraStreamer {
     constructor(container) {
       this.container = container;
+      this.cameraId = container.dataset.cameraId;
       this.cameraName = container.dataset.cameraName;
       this.webrtcUrl = container.dataset.webrtcUrl;
       this.mjpegUrl = container.dataset.mjpegUrl;
@@ -147,11 +148,40 @@
       this.videoWebRTC = container.querySelector(".stream-webrtc");
       this.imageMJPEG = container.querySelector(".stream-mjpeg");
       this.videoHLS = container.querySelector(".stream-hls");
-      this.loadingOverlay = container.querySelector(".loading-overlay");
+
+      // Create or reuse loading overlay (not in server HTML)
+      this.loadingOverlay = this._getOrCreateOverlay();
 
       this.pc = null;
       this.ws = null;
       this.currentType = null;
+    }
+
+    _getOrCreateOverlay() {
+      // Check if we already have an overlay for this camera
+      let overlay = window._loadingOverlays.get(this.cameraId);
+
+      if (!overlay || !document.contains(overlay)) {
+        // Create new overlay using DOM methods
+        overlay = document.createElement("div");
+        overlay.className =
+          "absolute inset-0 flex items-center justify-center bg-gray-900/80 loading-overlay";
+        const text = document.createElement("div");
+        text.className = "text-gray-400 text-sm";
+        text.textContent = "Loading...";
+        overlay.appendChild(text);
+        window._loadingOverlays.set(this.cameraId, overlay);
+      }
+
+      // Append to current container (might be new DOM from morph)
+      this.container.appendChild(overlay);
+
+      // Hide if already connected
+      if (window._connectedCameras.has(this.cameraId)) {
+        overlay.classList.add("hidden");
+      }
+
+      return overlay;
     }
 
     async startStream(type) {
@@ -171,7 +201,7 @@
       if (!this.webrtcUrl) return;
 
       try {
-        this.loadingOverlay.style.display = "flex";
+        this.loadingOverlay.classList.remove("hidden");
 
         // Create peer connection (matching go2rtc's implementation)
         this.pc = new RTCPeerConnection({
@@ -190,7 +220,9 @@
 
         // Hide loading when video starts playing
         this.videoWebRTC.onloadeddata = () => {
-          this.loadingOverlay.style.display = "none";
+          this.loadingOverlay.classList.add("hidden");
+          // Mark this camera as connected
+          window._connectedCameras.add(this.container.dataset.cameraId);
         };
 
         // Connect to go2rtc WebSocket
@@ -255,7 +287,8 @@
       if (!this.mjpegUrl) return;
       this.imageMJPEG.src = this.mjpegUrl;
       this.imageMJPEG.onload = () => {
-        this.loadingOverlay.style.display = "none";
+        this.loadingOverlay.classList.add("hidden");
+        window._connectedCameras.add(this.container.dataset.cameraId);
       };
     }
 
@@ -264,11 +297,13 @@
       // For HLS, use native browser support or hls.js
       if (this.videoHLS.canPlayType("application/vnd.apple.mpegurl")) {
         this.videoHLS.src = this.hlsUrl;
-        this.loadingOverlay.style.display = "none";
+        this.loadingOverlay.classList.add("hidden");
+        window._connectedCameras.add(this.container.dataset.cameraId);
       } else {
         // TODO: Load hls.js for browsers without native HLS support
         this.videoHLS.src = this.hlsUrl;
-        this.loadingOverlay.style.display = "none";
+        this.loadingOverlay.classList.add("hidden");
+        window._connectedCameras.add(this.container.dataset.cameraId);
       }
     }
 
@@ -287,7 +322,8 @@
       }
       this.imageMJPEG.src = "";
       this.videoHLS.src = "";
-      this.loadingOverlay.style.display = "flex";
+      this.loadingOverlay.classList.remove("hidden");
+      window._connectedCameras.delete(this.container.dataset.cameraId);
     }
 
     switchType(newType) {
@@ -319,16 +355,20 @@
     if (
       existingStream &&
       existingStream.pc &&
-      existingStream.pc.connectionState !== "closed"
+      existingStream.pc.connectionState !== "closed" &&
+      existingStream.pc.connectionState !== "failed"
     ) {
       // Reattach existing stream to new DOM elements
       const videoEl = container.querySelector(".stream-webrtc");
       const loadingOverlay = container.querySelector(".loading-overlay");
 
+      // Reattach srcObject if available
       if (existingStream.srcObject) {
         videoEl.srcObject = existingStream.srcObject;
-        loadingOverlay.style.display = "none";
       }
+
+      // Always hide loading overlay for active connections
+      loadingOverlay.classList.add("hidden");
     } else {
       // Create new streamer for this camera
       const streamer = new CameraStreamer(container);
