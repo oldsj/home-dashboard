@@ -14,6 +14,7 @@ dependencies = [
   "websockets>=16.0",
   "dashboard-integration-base",
   "example-integration",
+  "cameras-integration",
 ]
 
 [project.optional-dependencies]
@@ -22,9 +23,10 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "httpx>=0.28.1"]
 [tool.uv.sources]
 dashboard-integration-base = { workspace = true }
 example-integration = { workspace = true }
+cameras-integration = { workspace = true }
 
 [tool.uv.workspace]
-members = ["integrations/base", "integrations/example"]
+members = ["integrations/base", "integrations/example", "integrations/cameras"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -18,3 +18,9 @@ layout:
         col: 1
         width: 1
         height: 1
+    - integration: unifi_protect
+      position:
+        row: 1
+        col: 2
+        width: 2
+        height: 2

@@ -1,0 +1,375 @@
+{# Camera grid widget template #}
+<div class="h-full flex flex-col">
+  {# Widget header #}
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-lg font-semibold text-white">Cameras</h2>
+    <div class="flex items-center gap-2">
+      <span class="text-xs text-gray-400"
+        >{{ data.cameras|length }} cameras</span
+      >
+      <select
+        id="stream-type-selector"
+        class="text-xs bg-gray-700 text-white rounded px-2 py-1 border border-gray-600"
+      >
+        <!-- prettier-ignore -->
+        <option value="webrtc" {% if data.default_stream_type == "webrtc" %}selected{% endif %}>WebRTC</option>
+        <!-- prettier-ignore -->
+        <option value="mjpeg" {% if data.default_stream_type == "mjpeg" %}selected{% endif %}>MJPEG</option>
+        <!-- prettier-ignore -->
+        <option value="hls" {% if data.default_stream_type == "hls" %}selected{% endif %}>HLS</option>
+      </select>
+    </div>
+  </div>
+
+  {# Camera grid #}
+  <div class="flex-1 grid grid-cols-2 gap-3 overflow-y-auto">
+    {% for camera in data.cameras %}
+    <div
+      class="bg-gray-800/50 rounded-lg overflow-hidden border border-gray-700 flex flex-col"
+    >
+      {# Camera name and status #}
+      <div class="bg-gray-900/70 px-3 py-2 flex items-center justify-between">
+        <span class="text-sm font-medium text-white">{{ camera.name }}</span>
+        <div class="flex items-center gap-2">
+          {% if camera.motion_detected %}
+          <span class="flex items-center gap-1 text-xs text-red-400">
+            <svg class="w-3 h-3 fill-current animate-pulse" viewBox="0 0 20 20">
+              <path
+                d="M10 2a8 8 0 100 16 8 8 0 000-16zm1 11H9v-2h2v2zm0-4H9V5h2v4z"
+              />
+            </svg>
+            Motion
+          </span>
+          {% endif %} {% if camera.is_recording %}
+          <span
+            class="w-2 h-2 bg-red-500 rounded-full animate-pulse"
+            title="Recording"
+          ></span>
+          {% endif %}
+          <span
+            class="w-2 h-2 rounded-full {{ 'bg-green-500' if camera.status == 'online' else 'bg-gray-500' }}"
+            title="{{ camera.status|capitalize }}"
+          ></span>
+        </div>
+      </div>
+
+      {# Video stream #}
+      <div
+        class="relative flex-1 bg-gray-900 camera-stream-container"
+        data-camera-id="{{ camera.id }}"
+        data-camera-name="{{ camera.name }}"
+        data-webrtc-url="{{ camera.webrtc_url }}"
+        data-mjpeg-url="{{ camera.mjpeg_url }}"
+        data-hls-url="{{ camera.hls_url }}"
+      >
+        {% if camera.status == 'online' %} {# WebRTC video element (default) #}
+        <video
+          class="w-full h-full object-cover stream-webrtc"
+          data-stream-type="webrtc"
+          autoplay
+          playsinline
+          muted
+          style="display: {{ 'block' if data.default_stream_type == 'webrtc' else 'none' }}"
+        ></video>
+
+        {# MJPEG image element #}
+        <img
+          class="w-full h-full object-cover stream-mjpeg"
+          data-stream-type="mjpeg"
+          style="display: {{ 'block' if data.default_stream_type == 'mjpeg' else 'none' }}"
+        />
+
+        {# HLS video element #}
+        <video
+          class="w-full h-full object-cover stream-hls"
+          data-stream-type="hls"
+          controls
+          autoplay
+          playsinline
+          muted
+          style="display: {{ 'block' if data.default_stream_type == 'hls' else 'none' }}"
+        ></video>
+
+        {# Loading overlay #}
+        <div
+          class="absolute inset-0 flex items-center justify-center bg-gray-900/80 loading-overlay"
+        >
+          <div class="text-gray-400 text-sm">Loading...</div>
+        </div>
+        {% else %}
+        <div
+          class="absolute inset-0 flex items-center justify-center text-gray-500 text-sm"
+        >
+          Camera Offline
+        </div>
+        {% endif %}
+      </div>
+
+      {# Camera info footer #}
+      <div
+        class="bg-gray-900/50 px-3 py-1 text-xs text-gray-400 flex justify-between"
+      >
+        <span>{{ camera.model or 'Unknown' }}</span>
+        <span>{{ camera.resolution or '' }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# Recent motion events #} {% if data.recent_motion_events %}
+  <div class="mt-4 pt-4 border-t border-gray-700">
+    <h3 class="text-sm font-medium text-gray-300 mb-2">Recent Motion</h3>
+    <div class="space-y-1 max-h-24 overflow-y-auto">
+      {% for event in data.recent_motion_events[:5] %}
+      <div class="text-xs text-gray-400 flex justify-between">
+        <span>{{ event.camera_name }}</span>
+        <span>{{ event.timestamp.strftime('%I:%M %p') }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+  // WebRTC stream management
+  class CameraStreamer {
+    constructor(container) {
+      this.container = container;
+      this.cameraName = container.dataset.cameraName;
+      this.webrtcUrl = container.dataset.webrtcUrl;
+      this.mjpegUrl = container.dataset.mjpegUrl;
+      this.hlsUrl = container.dataset.hlsUrl;
+
+      this.videoWebRTC = container.querySelector(".stream-webrtc");
+      this.imageMJPEG = container.querySelector(".stream-mjpeg");
+      this.videoHLS = container.querySelector(".stream-hls");
+      this.loadingOverlay = container.querySelector(".loading-overlay");
+
+      this.pc = null;
+      this.ws = null;
+      this.currentType = null;
+    }
+
+    async startStream(type) {
+      this.stopStream();
+      this.currentType = type;
+
+      if (type === "webrtc") {
+        await this.startWebRTC();
+      } else if (type === "mjpeg") {
+        this.startMJPEG();
+      } else if (type === "hls") {
+        this.startHLS();
+      }
+    }
+
+    async startWebRTC() {
+      if (!this.webrtcUrl) return;
+
+      try {
+        this.loadingOverlay.style.display = "flex";
+
+        // Create peer connection (matching go2rtc's implementation)
+        this.pc = new RTCPeerConnection({
+          iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        });
+
+        // Add transceivers and create MediaStream from receiver tracks
+        // (this is how go2rtc's own webrtc.html does it)
+        const videoTrack = this.pc.addTransceiver("video", {
+          direction: "recvonly",
+        }).receiver.track;
+        const audioTrack = this.pc.addTransceiver("audio", {
+          direction: "recvonly",
+        }).receiver.track;
+        this.videoWebRTC.srcObject = new MediaStream([videoTrack, audioTrack]);
+
+        // Hide loading when video starts playing
+        this.videoWebRTC.onloadeddata = () => {
+          this.loadingOverlay.style.display = "none";
+        };
+
+        // Connect to go2rtc WebSocket
+        this.ws = new WebSocket(this.webrtcUrl);
+
+        // Send local ICE candidates to go2rtc
+        this.pc.onicecandidate = (event) => {
+          if (event.candidate && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(
+              JSON.stringify({
+                type: "webrtc/candidate",
+                value: event.candidate.candidate,
+              }),
+            );
+          }
+        };
+
+        this.ws.onopen = async () => {
+          // Create and send offer after WebSocket is open
+          const offer = await this.pc.createOffer();
+          await this.pc.setLocalDescription(offer);
+          this.ws.send(
+            JSON.stringify({
+              type: "webrtc/offer",
+              value: offer.sdp,
+            }),
+          );
+        };
+
+        this.ws.onmessage = async (event) => {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "webrtc/answer") {
+            await this.pc.setRemoteDescription({
+              type: "answer",
+              sdp: msg.value,
+            });
+          } else if (msg.type === "webrtc/candidate") {
+            // go2rtc sends candidate string directly as msg.value
+            await this.pc.addIceCandidate({
+              candidate: msg.value,
+              sdpMid: "0",
+            });
+          }
+        };
+
+        this.ws.onerror = () => {
+          const errorDiv = document.createElement("div");
+          errorDiv.className = "text-red-400 text-sm";
+          errorDiv.textContent = "Connection failed";
+          this.loadingOverlay.replaceChildren(errorDiv);
+        };
+      } catch (error) {
+        console.error("WebRTC error:", error);
+        const errorDiv = document.createElement("div");
+        errorDiv.className = "text-red-400 text-sm";
+        errorDiv.textContent = "Failed to load";
+        this.loadingOverlay.replaceChildren(errorDiv);
+      }
+    }
+
+    startMJPEG() {
+      if (!this.mjpegUrl) return;
+      this.imageMJPEG.src = this.mjpegUrl;
+      this.imageMJPEG.onload = () => {
+        this.loadingOverlay.style.display = "none";
+      };
+    }
+
+    startHLS() {
+      if (!this.hlsUrl) return;
+      // For HLS, use native browser support or hls.js
+      if (this.videoHLS.canPlayType("application/vnd.apple.mpegurl")) {
+        this.videoHLS.src = this.hlsUrl;
+        this.loadingOverlay.style.display = "none";
+      } else {
+        // TODO: Load hls.js for browsers without native HLS support
+        this.videoHLS.src = this.hlsUrl;
+        this.loadingOverlay.style.display = "none";
+      }
+    }
+
+    stopStream() {
+      if (this.pc) {
+        this.pc.close();
+        this.pc = null;
+      }
+      if (this.ws) {
+        this.ws.close();
+        this.ws = null;
+      }
+      if (this.videoWebRTC.srcObject) {
+        this.videoWebRTC.srcObject.getTracks().forEach((track) => track.stop());
+        this.videoWebRTC.srcObject = null;
+      }
+      this.imageMJPEG.src = "";
+      this.videoHLS.src = "";
+      this.loadingOverlay.style.display = "flex";
+    }
+
+    switchType(newType) {
+      // Hide all streams
+      this.videoWebRTC.style.display = "none";
+      this.imageMJPEG.style.display = "none";
+      this.videoHLS.style.display = "none";
+
+      // Show selected stream
+      if (newType === "webrtc") this.videoWebRTC.style.display = "block";
+      else if (newType === "mjpeg") this.imageMJPEG.style.display = "block";
+      else if (newType === "hls") this.videoHLS.style.display = "block";
+
+      // Start new stream
+      this.startStream(newType);
+    }
+  }
+
+  // Use global storage to persist streams across widget re-renders
+  window._cameraStreams = window._cameraStreams || new Map();
+
+  document.querySelectorAll(".camera-stream-container").forEach((container) => {
+    const cameraId = container.dataset.cameraId;
+    const hasVideoElements = container.querySelector(".stream-webrtc") !== null;
+    if (!hasVideoElements) return;
+
+    const existingStream = window._cameraStreams.get(cameraId);
+
+    if (
+      existingStream &&
+      existingStream.pc &&
+      existingStream.pc.connectionState !== "closed"
+    ) {
+      // Reattach existing stream to new DOM elements
+      const videoEl = container.querySelector(".stream-webrtc");
+      const loadingOverlay = container.querySelector(".loading-overlay");
+
+      if (existingStream.srcObject) {
+        videoEl.srcObject = existingStream.srcObject;
+        loadingOverlay.style.display = "none";
+      }
+    } else {
+      // Create new streamer for this camera
+      const streamer = new CameraStreamer(container);
+      const defaultType =
+        document.getElementById("stream-type-selector")?.value || "webrtc";
+      streamer.startStream(defaultType);
+
+      // Store reference to the stream
+      window._cameraStreams.set(cameraId, {
+        pc: streamer.pc,
+        ws: streamer.ws,
+        srcObject: null,
+        streamer: streamer,
+      });
+
+      // Update srcObject reference when stream connects
+      const videoEl = container.querySelector(".stream-webrtc");
+      const observer = new MutationObserver(() => {
+        if (videoEl.srcObject) {
+          const stored = window._cameraStreams.get(cameraId);
+          if (stored) stored.srcObject = videoEl.srcObject;
+        }
+      });
+      observer.observe(videoEl, { attributes: true, attributeFilter: ["src"] });
+
+      // Also check periodically for srcObject
+      const checkStream = setInterval(() => {
+        if (videoEl.srcObject) {
+          const stored = window._cameraStreams.get(cameraId);
+          if (stored) stored.srcObject = videoEl.srcObject;
+          clearInterval(checkStream);
+        }
+      }, 100);
+      setTimeout(() => clearInterval(checkStream), 10000);
+    }
+  });
+
+  // Handle stream type changes
+  document
+    .getElementById("stream-type-selector")
+    ?.addEventListener("change", (e) => {
+      const newType = e.target.value;
+      window._cameraStreams.forEach((stream) => {
+        if (stream.streamer) stream.streamer.switchType(newType);
+      });
+    });
+</script>

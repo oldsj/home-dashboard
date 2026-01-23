@@ -1,12 +1,17 @@
 services:
   dashboard:
     build: .
+    container_name: dashboard
     ports:
       - 9753:9753
     volumes:
       - ./config:/app/config
+    networks:
+      - dashboard-network
     environment:
       - PYTHONUNBUFFERED=1
+    depends_on:
+      - go2rtc
     develop:
       watch:
         - action: sync+restart
@@ -25,3 +30,20 @@ services:
           path: ./pyproject.toml
         - action: rebuild
           path: ./uv.lock
+
+  go2rtc:
+    image: alexxit/go2rtc:latest
+    container_name: go2rtc
+    ports:
+      - 1984:1984 # HTTP API and WebUI
+      - 8555:8555/tcp # WebRTC
+      - 8555:8555/udp # WebRTC
+    volumes:
+      - ./config/go2rtc.yaml:/config/go2rtc.yaml
+    networks:
+      - dashboard-network
+    restart: unless-stopped
+
+networks:
+  dashboard-network:
+    driver: bridge
