@@ -63,7 +63,11 @@ async def refresh_widget(integration: BaseIntegration) -> None:
             )
 
             disconnected = set()
-            for ws in active_connections:  # pragma: no cover - background task with live connections
+            for (
+                ws
+            ) in (
+                active_connections
+            ):  # pragma: no cover - background task with live connections
                 try:
                     await ws.send_text(message)
                 except Exception:
@@ -157,6 +161,7 @@ async def dashboard() -> str:
     widgets = []
     for widget_config in settings.layout.widgets:
         integration_name = widget_config.integration
+
         if integration_name not in loaded_integrations:
             continue
 

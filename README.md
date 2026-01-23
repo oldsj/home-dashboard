@@ -234,3 +234,93 @@ cd dashboard
 ```
 
 Code changes auto-reload. Hack away.
+
+## Setting Up Cameras Integration
+
+The cameras integration connects to UniFi Protect and streams camera feeds through go2rtc.
+
+### Prerequisites
+
+- UniFi Protect system (CloudKey, UNVR, or UDM)
+- Local user account with camera access
+- Docker Compose (included in the main docker-compose.yml)
+
+### Step 1: Add Credentials
+
+Add your UniFi Protect credentials to `config/credentials.yaml`:
+
+```yaml
+unifi_protect:
+  host: "https://192.168.1.1" # Your UniFi Protect URL
+  username: "your-username" # Local user account
+  password: "your-password" # Local user password
+  verify_ssl: false # Set to false for self-signed certs
+```
+
+### Step 2: Enable in Dashboard
+
+Add the cameras widget to `config/config.yaml`:
+
+```yaml
+layout:
+  widgets:
+    - integration: unifi_protect
+      position:
+        row: 1
+        col: 1
+        width: 2 # Cameras widget works best spanning 2 columns
+        height: 2 # And 2 rows
+```
+
+### Step 3: Start Services
+
+The cameras integration and go2rtc will start automatically with Docker Compose:
+
+```bash
+docker compose up
+```
+
+Or if the server is already running, restart it:
+
+```bash
+docker compose restart
+```
+
+### How It Works
+
+1. **Integration Initialization**: On startup, the cameras integration connects to UniFi Protect and discovers all cameras
+2. **Stream Registration**: Each camera's RTSP stream is registered with go2rtc
+3. **Browser Streaming**: The dashboard widget connects to go2rtc via WebRTC/MJPEG/HLS for browser-compatible playback
+4. **Motion Detection**: Recent motion events from UniFi Protect are displayed below the camera grid
+
+### Stream Types
+
+- **WebRTC** (default): Low latency, best quality, works in modern browsers
+- **MJPEG**: Universal compatibility, higher bandwidth, slightly higher latency
+- **HLS**: Adaptive streaming, good for mobile devices
+
+You can switch between stream types using the dropdown in the widget.
+
+### Troubleshooting
+
+**Cameras show "Loading..." indefinitely:**
+
+- Verify port 1984 is accessible from your browser
+- Check go2rtc logs: `docker compose logs go2rtc`
+
+**"Failed to connect to UniFi Protect":**
+
+- Verify your UniFi Protect credentials in credentials.yaml
+- Ensure the UniFi Protect system is accessible from the dashboard container
+- Check dashboard logs: `docker compose logs dashboard`
+
+**Streams work but show "Connection failed":**
+
+- WebRTC requires ports 8555 (TCP and UDP) to be accessible
+- Try switching to MJPEG stream type as a fallback
+
+**Camera not appearing:**
+
+- Check that the camera is online in UniFi Protect
+- Verify the camera has RTSP enabled (usually enabled by default)
+- Check integration logs for "No RTSP URL for camera" warnings
