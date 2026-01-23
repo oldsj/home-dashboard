@@ -40,18 +40,18 @@ class BaseIntegration(ABC):
     To create a new integration:
     1. Create a new directory in integrations/ (e.g., integrations/todoist/)
     2. Create integration.py with a class inheriting from BaseIntegration
-    3. Create widget.html with the Jinja2 template for the widget
-    4. Add credentials to config/credentials.yaml
-    5. Enable the widget in config/config.yaml
+    3. Create a ConfigModel class inheriting from IntegrationConfig
+    4. Create widget.html with the Jinja2 template for the widget
+    5. Add credentials to config/credentials.yaml
+    6. Enable the widget in config/config.yaml
 
     Required class attributes:
         name: Unique identifier (e.g., "todoist")
         display_name: Human-readable name (e.g., "Todoist")
+        ConfigModel: Pydantic model class for config validation
 
     Optional class attributes:
         refresh_interval: Seconds between data fetches (default: 30)
-        ConfigModel: Pydantic model class for config validation (recommended)
-        config_schema: Dict describing config fields (legacy, deprecated)
     """
 
     # Required - must be overridden
@@ -61,11 +61,8 @@ class BaseIntegration(ABC):
     # Optional - can be overridden
     refresh_interval: int = 30
 
-    # Pydantic config model (recommended approach)
+    # Pydantic config model (required)
     ConfigModel: ClassVar[Optional[Type[IntegrationConfig]]] = None
-
-    # Legacy dict-based schema (deprecated, use ConfigModel instead)
-    config_schema: ClassVar[dict[str, dict[str, Any]]] = {}
 
     # Keys that should never be exposed to templates
     _sensitive_keys: ClassVar[set[str]] = {
@@ -91,29 +88,28 @@ class BaseIntegration(ABC):
 
     @property
     def config(self) -> dict[str, Any]:
-        """Get config as a dict (for backward compatibility)."""
-        if self._validated_config is not None:
-            return self._validated_config.model_dump()
-        return self._raw_config
+        """Get config as a dict."""
+        if self._validated_config is None:
+            raise RuntimeError(
+                f"Integration '{self.name}' config not validated. "
+                "This should not happen."
+            )
+        return self._validated_config.model_dump()
 
     def _validate_config(self) -> None:
-        """Validate config against schema or Pydantic model."""
-        # Prefer Pydantic model if defined
-        if self.ConfigModel is not None:
-            try:
-                self._validated_config = self.ConfigModel(**self._raw_config)
-            except ValidationError as e:
-                raise ValueError(
-                    f"Integration '{self.name}' config validation failed: {e}"
-                ) from e
-            return
+        """Validate config against Pydantic model."""
+        if self.ConfigModel is None:
+            raise ValueError(
+                f"Integration '{self.name}' must define ConfigModel. "
+                "See IntegrationConfig in dashboard_integration_base.base"
+            )
 
-        # Fall back to legacy dict-based validation
-        for field, schema in self.config_schema.items():
-            if schema.get("required", False) and field not in self._raw_config:
-                raise ValueError(
-                    f"Integration '{self.name}' requires config field: {field}"
-                )
+        try:
+            self._validated_config = self.ConfigModel(**self._raw_config)
+        except ValidationError as e:
+            raise ValueError(
+                f"Integration '{self.name}' config validation failed: {e}"
+            ) from e
 
     def _get_template_env(self) -> Environment:
         """Get Jinja2 environment for this integration's templates."""
@@ -238,17 +234,9 @@ class BaseIntegration(ABC):
         Returns:
             Config value or default
         """
-        # For Pydantic models, use getattr on validated config
-        if self._validated_config is not None:
-            return getattr(self._validated_config, key, default)
-
-        # Legacy dict-based config
-        if key in self._raw_config:
-            return self._raw_config[key]
-
-        # Check schema for default
-        if key in self.config_schema:
-            schema_default = self.config_schema[key].get("default", default)
-            return schema_default
-
-        return default
+        if self._validated_config is None:
+            raise RuntimeError(
+                f"Integration '{self.name}' config not validated. "
+                "This should not happen."
+            )
+        return getattr(self._validated_config, key, default)

@@ -78,25 +78,49 @@ Integrations are auto-discovered on startup from subdirectories.
 2. Add `integration.py`:
 
 ```python
-from integrations.base import BaseIntegration
+from pydantic import Field
+from dashboard_integration_base import BaseIntegration, IntegrationConfig
+
+class MyIntegrationConfig(IntegrationConfig):
+    """Configuration model for MyIntegration."""
+
+    api_key: str = Field(..., description="API key", json_schema_extra={"secret": True})
+    refresh_rate: int = Field(default=60, description="Refresh rate in seconds")
 
 class MyIntegration(BaseIntegration):
     name = "my_integration"
     display_name = "My Service"
     refresh_interval = 60
 
-    config_schema = {
-        "api_key": {"type": "str", "required": True, "secret": True},
-    }
+    ConfigModel = MyIntegrationConfig
 
     async def fetch_data(self) -> dict:
         # Use self.config or self.get_config_value()
+        api_key = self.get_config_value("api_key")
         return {"data": "..."}
 ```
 
 3. Add `widget.html` (Jinja2 template)
 4. Add credentials to `config/credentials.yaml`
 5. Add widget to `config/config.yaml` under `layout.widgets`
+
+### Optional: Event-Driven Updates
+
+To support real-time updates instead of polling, override `start_event_stream()`:
+
+```python
+async def start_event_stream(self) -> AsyncIterator[dict[str, Any]]:
+    """Stream events as they happen."""
+    # Yield initial state
+    yield await self.fetch_data()
+
+    # Subscribe to event source
+    async for event in self._client.subscribe_events():
+        if event.type in ['motion', 'alert']:
+            yield await self.fetch_data()
+```
+
+If not implemented, the integration will use polling mode (fetch_data + refresh_interval).
 
 ## Security Notes
 
@@ -133,5 +157,17 @@ This project follows practices that make the codebase AI-agent friendly. Maintai
 
 - **Type all function signatures** - Parameters and return types
 - **Use type hints consistently** - `Dict`, `List`, `Optional`, `Type`, etc.
-- **Validate at boundaries** - Config schemas, API inputs
-- Future: Add mypy strict mode, consider Pydantic models for config
+- **Validate at boundaries** - Use Pydantic models for config validation
+- **All integrations must use ConfigModel** - No dict-based config schemas
+- Future: Add mypy strict mode
+
+### 5. No Backward Compatibility Code
+
+**IMPORTANT**: This codebase does not maintain backward compatibility for deprecated patterns. When we adopt a better approach, we fully migrate and remove the old code.
+
+- ✅ **Correct**: Use Pydantic `ConfigModel` for all integrations
+- ❌ **Incorrect**: Dict-based `config_schema` (removed)
+- ✅ **Correct**: Event-driven updates via `start_event_stream()`
+- ❌ **Incorrect**: Polling-only implementations when events are available
+
+**Why**: Backward compatibility adds complexity that makes the codebase harder for AI agents to understand and modify. Clean, single-path implementations are easier to reason about and maintain.

@@ -44,43 +44,81 @@ def setup_templates() -> Environment:
 template_env = setup_templates()
 
 
+async def broadcast_widget_update(integration_name: str, html: str) -> None:
+    """
+    Broadcast a widget update to all connected WebSocket clients.
+
+    Args:
+        integration_name: Name of the integration
+        html: Rendered HTML to broadcast
+    """
+    message = json.dumps(
+        {"type": "widget_update", "integration": integration_name, "html": html}
+    )
+
+    disconnected = set()
+    for (
+        ws
+    ) in active_connections:  # pragma: no cover - background task with live connections
+        try:
+            await ws.send_text(message)
+        except Exception:
+            disconnected.add(ws)
+
+    # Clean up disconnected clients
+    active_connections.difference_update(disconnected)
+
+
 async def refresh_widget(integration: BaseIntegration) -> None:
     """
-    Periodically refresh a widget and broadcast updates.
+    Handle widget updates via event stream OR polling.
+
+    Tries event stream first (start_event_stream). If not implemented,
+    falls back to polling mode (fetch_data + refresh_interval).
 
     Args:
         integration: The integration to refresh
     """
-    while True:
+    # Try event stream first
+    try:
+        event_stream = integration.start_event_stream()
+
+        # Check if it's actually implemented (yields at least once)
         try:
-            # Fetch fresh data
-            data = await integration.fetch_data()
+            data = await anext(event_stream)
+            logger.info(f"{integration.name} using event stream mode")
+
+            # Process initial data
             html = integration.render_widget(data)
+            await broadcast_widget_update(integration.name, html)
 
-            # Broadcast to all connected clients
-            message = json.dumps(
-                {"type": "widget_update", "integration": integration.name, "html": html}
-            )
+            # Continue streaming events
+            async for data in event_stream:
+                html = integration.render_widget(data)
+                await broadcast_widget_update(integration.name, html)
 
-            disconnected = set()
-            for (
-                ws
-            ) in (
-                active_connections
-            ):  # pragma: no cover - background task with live connections
-                try:
-                    await ws.send_text(message)
-                except Exception:
-                    disconnected.add(ws)
+        except StopAsyncIteration:
+            # Event stream ended, shouldn't happen for infinite streams
+            logger.warning(f"{integration.name} event stream ended unexpectedly")
 
-            # Clean up disconnected clients
-            active_connections.difference_update(disconnected)
+    except (TypeError, StopAsyncIteration):
+        # No event stream - fall back to polling
+        logger.info(
+            f"{integration.name} using polling mode ({integration.refresh_interval}s)"
+        )
 
-        except Exception:  # pragma: no cover - defensive error handling
-            logger.exception("Error refreshing %s", integration.name)
+        while True:
+            try:
+                # Fetch fresh data
+                data = await integration.fetch_data()
+                html = integration.render_widget(data)
+                await broadcast_widget_update(integration.name, html)
 
-        # Wait for next refresh
-        await asyncio.sleep(integration.refresh_interval)
+            except Exception:  # pragma: no cover - defensive error handling
+                logger.exception("Error refreshing %s", integration.name)
+
+            # Wait for next refresh
+            await asyncio.sleep(integration.refresh_interval)
 
 
 def load_all_integrations() -> dict[str, BaseIntegration]:

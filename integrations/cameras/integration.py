@@ -7,6 +7,7 @@ and provides camera info and motion events to the dashboard.
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -260,3 +261,56 @@ class UniFiProtectIntegration(BaseIntegration):
         except Exception as e:
             logger.error(f"Error fetching camera data: {e}")
             raise
+
+    async def start_event_stream(self) -> AsyncIterator[dict[str, Any]]:
+        """
+        Stream camera events from UniFi Protect WebSocket.
+
+        Yields widget data whenever camera status changes or motion is detected.
+        """
+        # Initialize clients
+        if not self._initialized:
+            await self._initialize_clients()
+
+        if not self._unifi_client or not self._unifi_client._client:
+            raise RuntimeError("Clients not initialized")
+
+        # Yield initial state
+        yield await self.fetch_data()
+
+        # Set up event queue for WebSocket messages
+        event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+        def websocket_callback(msg: Any) -> None:
+            """Handle WebSocket messages from UniFi Protect."""
+            # Queue the message for async processing
+            try:
+                asyncio.create_task(event_queue.put(msg))
+            except RuntimeError:
+                # Event loop might be closed, ignore
+                pass
+
+        # Subscribe to WebSocket updates
+        unsubscribe = self._unifi_client._client.subscribe_websocket(websocket_callback)
+
+        try:
+            # Stream events as they arrive
+            while True:
+                # Wait for next event with timeout to periodically refresh
+                try:
+                    msg = await asyncio.wait_for(event_queue.get(), timeout=30.0)
+
+                    # Check if message is related to cameras or motion events
+                    # The message structure varies, but we'll refresh on any camera-related update
+                    if msg:
+                        logger.debug("Received WebSocket event, refreshing camera data")
+                        yield await self.fetch_data()
+
+                except asyncio.TimeoutError:
+                    # No events in 30s, yield current state anyway
+                    logger.debug("No camera events, yielding current state")
+                    yield await self.fetch_data()
+
+        finally:
+            # Clean up subscription
+            unsubscribe()

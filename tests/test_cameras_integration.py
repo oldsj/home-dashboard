@@ -1,23 +1,24 @@
 """Tests for cameras integration."""
 
-import pytest
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
+import httpx
+import pytest
 from pydantic import ValidationError
 
 from integrations.cameras.integration import (
-    UniFiProtectIntegration,
     UniFiProtectConfig,
+    UniFiProtectIntegration,
 )
 from integrations.cameras.src.go2rtc_client import Go2RTCClient
-from integrations.cameras.src.unifi_protect import UniFiProtectClient
 from integrations.cameras.src.models import (
-    StreamType,
     CameraInfo,
     CameraStatus,
     MotionEvent,
+    StreamType,
 )
-import httpx
+from integrations.cameras.src.unifi_protect import UniFiProtectClient
 
 
 class TestUniFiProtectConfig:
@@ -105,14 +106,14 @@ class TestGo2RTCClient:
         """Test successful stream registration."""
         client = Go2RTCClient("http://go2rtc:1984")
 
-        with patch.object(
-            client.client, "patch", new_callable=AsyncMock
-        ) as mock_patch:
+        with patch.object(client.client, "patch", new_callable=AsyncMock) as mock_patch:
             mock_response = MagicMock()
             mock_response.raise_for_status = MagicMock()
             mock_patch.return_value = mock_response
 
-            result = await client.register_stream("camera1", "rtsp://camera.local/stream")
+            result = await client.register_stream(
+                "camera1", "rtsp://camera.local/stream"
+            )
 
             assert result is True
             mock_patch.assert_called_once_with(
@@ -124,16 +125,16 @@ class TestGo2RTCClient:
         """Test stream registration with HTTP status error."""
         client = Go2RTCClient("http://go2rtc:1984")
 
-        with patch.object(
-            client.client, "patch", new_callable=AsyncMock
-        ) as mock_patch:
+        with patch.object(client.client, "patch", new_callable=AsyncMock) as mock_patch:
             mock_response = MagicMock()
             mock_response.status_code = 403
             mock_patch.side_effect = httpx.HTTPStatusError(
                 "Forbidden", request=MagicMock(), response=mock_response
             )
 
-            result = await client.register_stream("camera1", "rtsp://camera.local/stream")
+            result = await client.register_stream(
+                "camera1", "rtsp://camera.local/stream"
+            )
 
             assert result is False
 
@@ -141,12 +142,12 @@ class TestGo2RTCClient:
         """Test stream registration with HTTP error."""
         client = Go2RTCClient("http://go2rtc:1984")
 
-        with patch.object(
-            client.client, "patch", new_callable=AsyncMock
-        ) as mock_patch:
+        with patch.object(client.client, "patch", new_callable=AsyncMock) as mock_patch:
             mock_patch.side_effect = httpx.ConnectError("Connection failed")
 
-            result = await client.register_stream("camera1", "rtsp://camera.local/stream")
+            result = await client.register_stream(
+                "camera1", "rtsp://camera.local/stream"
+            )
 
             assert result is False
 
@@ -276,7 +277,9 @@ class TestUniFiProtectClient:
         mock_api_client = AsyncMock()
         mock_api_client.update = AsyncMock()
 
-        with patch("integrations.cameras.src.unifi_protect.ProtectApiClient") as mock_class:
+        with patch(
+            "integrations.cameras.src.unifi_protect.ProtectApiClient"
+        ) as mock_class:
             mock_class.return_value = mock_api_client
             await client.connect()
 
@@ -296,7 +299,9 @@ class TestUniFiProtectClient:
             host="unifi.local", port=443, username="admin", password="password"
         )
 
-        with patch("integrations.cameras.src.unifi_protect.ProtectApiClient") as mock_class:
+        with patch(
+            "integrations.cameras.src.unifi_protect.ProtectApiClient"
+        ) as mock_class:
             mock_class.side_effect = Exception("Connection failed")
 
             with pytest.raises(Exception, match="Connection failed"):
@@ -502,7 +507,14 @@ class TestUniFiProtectClient:
         mock_api_client.get_events = AsyncMock(return_value=[mock_event])
         client._client = mock_api_client
 
-        with patch("integrations.cameras.src.unifi_protect.isinstance", lambda obj, cls: True if cls.__name__ == "Event" or obj is mock_event else isinstance(obj, cls)):
+        with patch(
+            "integrations.cameras.src.unifi_protect.isinstance",
+            lambda obj, cls: (
+                True
+                if cls.__name__ == "Event" or obj is mock_event
+                else isinstance(obj, cls)
+            ),
+        ):
             events = await client.get_recent_motion_events(hours=6, limit=20)
 
         assert len(events) == 1
@@ -514,7 +526,7 @@ class TestUniFiProtectClient:
 
     async def test_get_recent_motion_events_fallback_api(self):
         """Test getting recent motion events with fallback API."""
-        from uiprotect.data import EventType, Event
+        from uiprotect.data import Event, EventType
 
         client = UniFiProtectClient(
             host="unifi.local", port=443, username="admin", password="password"
@@ -538,7 +550,14 @@ class TestUniFiProtectClient:
         )
         client._client = mock_api_client
 
-        with patch("integrations.cameras.src.unifi_protect.isinstance", lambda obj, cls: True if cls.__name__ == "Event" or obj is mock_event else isinstance(obj, cls)):
+        with patch(
+            "integrations.cameras.src.unifi_protect.isinstance",
+            lambda obj, cls: (
+                True
+                if cls.__name__ == "Event" or obj is mock_event
+                else isinstance(obj, cls)
+            ),
+        ):
             events = await client.get_recent_motion_events(hours=6, limit=20)
 
         assert len(events) == 1
@@ -562,7 +581,14 @@ class TestUniFiProtectClient:
         mock_api_client.get_events = AsyncMock(return_value=[mock_event])
         client._client = mock_api_client
 
-        with patch("integrations.cameras.src.unifi_protect.isinstance", lambda obj, cls: True if cls.__name__ == "Event" or obj is mock_event else isinstance(obj, cls)):
+        with patch(
+            "integrations.cameras.src.unifi_protect.isinstance",
+            lambda obj, cls: (
+                True
+                if cls.__name__ == "Event" or obj is mock_event
+                else isinstance(obj, cls)
+            ),
+        ):
             events = await client.get_recent_motion_events(hours=6, limit=20)
 
         # Should be empty since event has no camera
@@ -644,7 +670,7 @@ class TestUniFiProtectIntegration:
 
         assert integration.name == "unifi_protect"
         assert integration.display_name == "Cameras"
-        assert integration.refresh_interval == 5
+        assert integration.refresh_interval == 30
         assert integration._unifi_client is None
         assert integration._go2rtc_client is None
         assert integration._initialized is False
@@ -665,13 +691,22 @@ class TestUniFiProtectIntegration:
 
         mock_go2rtc_client = AsyncMock()
         mock_go2rtc_client.check_health = AsyncMock(return_value=True)
-        mock_go2rtc_client.get_stream_url = AsyncMock(return_value="ws://localhost/stream")
+        mock_go2rtc_client.get_stream_url = AsyncMock(
+            return_value="ws://localhost/stream"
+        )
 
         with patch.object(
-            integration, "_UniFiProtectIntegration__unifi_client", mock_unifi_client, create=True
+            integration,
+            "_UniFiProtectIntegration__unifi_client",
+            mock_unifi_client,
+            create=True,
         ):
-            with patch("integrations.cameras.integration.UniFiProtectClient") as mock_unifi_class:
-                with patch("integrations.cameras.integration.Go2RTCClient") as mock_go2rtc_class:
+            with patch(
+                "integrations.cameras.integration.UniFiProtectClient"
+            ) as mock_unifi_class:
+                with patch(
+                    "integrations.cameras.integration.Go2RTCClient"
+                ) as mock_go2rtc_class:
                     mock_unifi_class.return_value = mock_unifi_client
                     mock_go2rtc_class.return_value = mock_go2rtc_client
 
@@ -959,8 +994,12 @@ class TestUniFiProtectIntegration:
         mock_go2rtc_client = AsyncMock()
         mock_go2rtc_client.check_health = AsyncMock(return_value=False)
 
-        with patch("integrations.cameras.integration.UniFiProtectClient") as mock_unifi_class:
-            with patch("integrations.cameras.integration.Go2RTCClient") as mock_go2rtc_class:
+        with patch(
+            "integrations.cameras.integration.UniFiProtectClient"
+        ) as mock_unifi_class:
+            with patch(
+                "integrations.cameras.integration.Go2RTCClient"
+            ) as mock_go2rtc_class:
                 mock_unifi_class.return_value = mock_unifi_client
                 mock_go2rtc_class.return_value = mock_go2rtc_client
 
@@ -978,9 +1017,13 @@ class TestUniFiProtectIntegration:
         integration = UniFiProtectIntegration(config)
 
         mock_unifi_client = AsyncMock()
-        mock_unifi_client.connect = AsyncMock(side_effect=Exception("Connection failed"))
+        mock_unifi_client.connect = AsyncMock(
+            side_effect=Exception("Connection failed")
+        )
 
-        with patch("integrations.cameras.integration.UniFiProtectClient") as mock_unifi_class:
+        with patch(
+            "integrations.cameras.integration.UniFiProtectClient"
+        ) as mock_unifi_class:
             mock_unifi_class.return_value = mock_unifi_client
 
             with pytest.raises(Exception, match="Connection failed"):

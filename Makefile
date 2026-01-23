@@ -1,5 +1,5 @@
 .PHONY: test
 
-# Run tests: failed first (if any), then all others
+# Optimized test target: parallel execution, failed first, stop on first failure
 test:
-	uv run pytest --ff tests/
+	uv run pytest -n auto --ff -x tests/

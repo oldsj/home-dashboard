@@ -7,6 +7,13 @@ from integrations import discover_integrations, load_integration
 from integrations.base import BaseIntegration, IntegrationConfig
 
 
+class MockIntegrationConfig(IntegrationConfig):
+    """Configuration for MockIntegration."""
+
+    url: str = Field(..., description="URL for the mock integration")
+    timeout: int = Field(default=30, description="Timeout in seconds")
+
+
 class MockIntegration(BaseIntegration):
     """Mock integration for testing."""
 
@@ -14,10 +21,7 @@ class MockIntegration(BaseIntegration):
     display_name = "Mock Integration"
     refresh_interval = 10
 
-    config_schema = {
-        "url": {"type": "str", "required": True},
-        "timeout": {"type": "int", "required": False, "default": 30},
-    }
+    ConfigModel = MockIntegrationConfig
 
     async def fetch_data(self) -> dict:
         return {"status": "ok", "url": self.config.get("url")}
@@ -31,7 +35,10 @@ class TestBaseIntegration:
         config = {"url": "https://example.com", "api_key": "secret123"}
         integration = MockIntegration(config)
 
-        assert integration.config == config
+        # Config includes default values from Pydantic model
+        assert integration.config["url"] == "https://example.com"
+        assert integration.config["api_key"] == "secret123"
+        assert integration.config["timeout"] == 30  # Default value
         assert integration.name == "mock"
         assert integration.display_name == "Mock Integration"
 
@@ -39,7 +46,7 @@ class TestBaseIntegration:
         """Test initialization fails with missing required field."""
         config = {"timeout": 60}  # Missing required 'url'
 
-        with pytest.raises(ValueError, match="requires config field: url"):
+        with pytest.raises(ValueError, match="config validation failed"):
             MockIntegration(config)
 
     def test_get_config_value(self):
@@ -131,7 +138,9 @@ class TestBaseIntegration:
             async def fetch_data(self):
                 return {}
 
-        integration = SecretIntegration({"api_key": "my-secret", "public_url": "https://api.example.com"})
+        integration = SecretIntegration(
+            {"api_key": "my-secret", "public_url": "https://api.example.com"}
+        )
         safe_config = integration._get_safe_config()
 
         # Secret field should be filtered
@@ -144,9 +153,13 @@ class TestBaseIntegration:
         import sys
 
         # Create an integration with a fake module
+        class FakeIntegrationConfig(IntegrationConfig):
+            pass
+
         class FakeModuleIntegration(BaseIntegration):
             name = "fake"
             display_name = "Fake"
+            ConfigModel = FakeIntegrationConfig
 
             async def fetch_data(self):
                 return {}
@@ -232,6 +245,7 @@ class TestIntegrationDiscovery:
     def test_discover_integrations_with_bad_import(self, tmp_path, monkeypatch):
         """Test discovery gracefully handles import errors."""
         import sys
+
         from integrations import discover_integrations
 
         # Create a bad integration directory
@@ -239,7 +253,9 @@ class TestIntegrationDiscovery:
         bad_integration_dir.mkdir(parents=True)
 
         # Create integration.py that will fail to import
-        (bad_integration_dir / "integration.py").write_text("raise RuntimeError('Bad integration')")
+        (bad_integration_dir / "integration.py").write_text(
+            "raise RuntimeError('Bad integration')"
+        )
 
         # Add temp directory to path
         monkeypatch.syspath_prepend(str(tmp_path))
