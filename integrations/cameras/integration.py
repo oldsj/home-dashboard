@@ -16,7 +16,7 @@ from dashboard_integration_base import BaseIntegration, IntegrationConfig
 from pydantic import Field, field_validator
 
 from .src.go2rtc_client import Go2RTCClient
-from .src.models import StreamType
+from .src.models import MotionEvent, StreamType
 from .src.unifi_protect import UniFiProtectClient
 
 logger = logging.getLogger(__name__)
@@ -87,6 +87,9 @@ class UniFiProtectIntegration(BaseIntegration):
         self._unifi_client: Optional[UniFiProtectClient] = None
         self._go2rtc_client: Optional[Go2RTCClient] = None
         self._initialized = False
+        self._recent_motion_events: list[MotionEvent] = (
+            []
+        )  # Cache from WebSocket events
 
     async def _initialize_clients(self) -> None:
         """Initialize UniFi Protect and go2rtc clients."""
@@ -232,10 +235,16 @@ class UniFiProtectIntegration(BaseIntegration):
                     }
                 )
 
-            # Fetch recent motion events (last 6 hours, max 20 events)
-            motion_events = await self._unifi_client.get_recent_motion_events(
-                hours=6, limit=20
-            )
+            # Use cached events from WebSocket if available, otherwise fetch from API
+            if not self._recent_motion_events:
+                # Initial load - fetch historical events from API
+                motion_events = await self._unifi_client.get_recent_motion_events(
+                    hours=6, limit=20
+                )
+                self._recent_motion_events = motion_events
+            else:
+                # Use real-time cached events from WebSocket
+                motion_events = self._recent_motion_events
 
             motion_events_data = [
                 {
@@ -306,8 +315,42 @@ class UniFiProtectIntegration(BaseIntegration):
                 if action in ("ping", "heartbeat"):
                     continue
 
-                logger.debug(f"Camera event: {type(msg).__name__}")
-                yield await self.fetch_data()
+                # Extract the updated object from WebSocket message
+                new_obj = getattr(msg, "new_obj", None)
+                obj_type = type(new_obj).__name__ if new_obj else None
+
+                # If this is a motion event, add it to our cache
+                if obj_type == "Event" and new_obj:
+                    # Check if it's a motion event
+                    from uiprotect.data.types import EventType
+
+                    if (
+                        hasattr(new_obj, "type")
+                        and new_obj.type == EventType.MOTION
+                        and hasattr(new_obj, "camera")
+                        and new_obj.camera
+                    ):
+                        # Create MotionEvent from the WebSocket event
+                        motion_event = MotionEvent(
+                            camera_id=new_obj.camera.id,
+                            camera_name=new_obj.camera.name,
+                            timestamp=new_obj.start,
+                            thumbnail_url=getattr(new_obj, "thumbnail_url", None),
+                            score=new_obj.score,
+                        )
+
+                        # Add to cache, keeping most recent 20 events
+                        self._recent_motion_events.insert(0, motion_event)
+                        self._recent_motion_events = self._recent_motion_events[:20]
+
+                        logger.info(
+                            f"Motion event captured: {motion_event.camera_name} "
+                            f"at {motion_event.timestamp.strftime('%I:%M:%S %p')}"
+                        )
+
+                # Only update if this was a Camera or Event change (not NVR/Bridge updates)
+                if obj_type in ("Camera", "Event"):
+                    yield await self.fetch_data()
 
         finally:
             # Clean up subscription
