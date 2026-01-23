@@ -9,7 +9,7 @@ agents can easily follow when creating new integrations.
 import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, ClassVar, Optional, Type
+from typing import Any, AsyncIterator, ClassVar, Optional, Type
 
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -151,6 +151,33 @@ class BaseIntegration(ABC):
             Dict containing data to pass to the widget template
         """
         pass  # pragma: no cover - abstract method
+
+    async def start_event_stream(self) -> AsyncIterator[dict[str, Any]]:
+        """
+        Optional: Stream events as they happen instead of polling.
+
+        Integrations that support real-time events should override this method.
+        Yield data dicts whenever an event occurs (motion detected, status change, etc.)
+
+        If not overridden, the integration will use polling (fetch_data + refresh_interval).
+
+        Example:
+            async def start_event_stream(self) -> AsyncIterator[dict[str, Any]]:
+                # Yield initial state
+                yield await self.fetch_data()
+
+                # Subscribe to event source
+                async for event in self._client.subscribe_events():
+                    if event.type in ['motion', 'alert']:
+                        # Only push updates when something interesting happens
+                        yield await self.fetch_data()
+
+        Returns:
+            AsyncIterator yielding data dicts to pass to widget template
+        """
+        # Default: Not implemented (return empty iterator to signal polling mode)
+        return
+        yield  # pragma: no cover - make it an async generator
 
     def _get_safe_config(self) -> dict[str, Any]:
         """

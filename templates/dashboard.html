@@ -41,7 +41,8 @@ body %}
         const widget = document.getElementById("widget-" + data.integration);
         if (widget) {
           // Server-rendered content from trusted integration templates
-          widget.innerHTML = data.html;
+          // Use Idiomorph to intelligently morph DOM, preserving video elements
+          Idiomorph.morph(widget, data.html, { morphStyle: "innerHTML" });
         }
       }
     } catch (e) {

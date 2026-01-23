@@ -64,6 +64,7 @@
       >
         {% if camera.status == 'online' %} {# WebRTC video element (default) #}
         <video
+          id="video-webrtc-{{ camera.id }}"
           class="w-full h-full object-cover stream-webrtc"
           data-stream-type="webrtc"
           autoplay
@@ -74,6 +75,7 @@
 
         {# MJPEG image element #}
         <img
+          id="video-mjpeg-{{ camera.id }}"
           class="w-full h-full object-cover stream-mjpeg"
           data-stream-type="mjpeg"
           style="display: {{ 'block' if data.default_stream_type == 'mjpeg' else 'none' }}"
@@ -81,6 +83,7 @@
 
         {# HLS video element #}
         <video
+          id="video-hls-{{ camera.id }}"
           class="w-full h-full object-cover stream-hls"
           data-stream-type="hls"
           controls

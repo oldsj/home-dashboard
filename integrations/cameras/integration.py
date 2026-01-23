@@ -74,7 +74,9 @@ class UniFiProtectIntegration(BaseIntegration):
 
     name = "unifi_protect"
     display_name = "Cameras"
-    refresh_interval = 5  # Update every 5 seconds
+    refresh_interval = (
+        30  # Update every 30 seconds (video is live, only need status updates)
+    )
 
     ConfigModel = UniFiProtectConfig
 
