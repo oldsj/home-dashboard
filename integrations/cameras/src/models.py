@@ -56,7 +56,9 @@ class MotionEvent(BaseModel):
     camera_name: str
     timestamp: datetime
     thumbnail_url: Optional[str] = None
-    score: Optional[float] = Field(default=None, ge=0.0, le=100.0)  # UniFi uses 0-100 scale
+    score: Optional[float] = Field(
+        default=None, ge=0.0, le=100.0
+    )  # UniFi uses 0-100 scale
 
 
 class CameraInfo(BaseModel):

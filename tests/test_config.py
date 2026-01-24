@@ -168,7 +168,7 @@ class TestConfigModels:
 
         widget = WidgetConfig(
             integration="test",
-            position={"column": 1, "row": 2, "width": 3, "height": 1}
+            position={"column": 1, "row": 2, "width": 3, "height": 1},
         )
         assert widget.position == {"column": 1, "row": 2, "width": 3, "height": 1}
         assert widget.enabled is True

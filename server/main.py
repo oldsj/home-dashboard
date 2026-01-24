@@ -21,6 +21,7 @@ from jinja2 import Environment, FileSystemLoader
 from integrations import discover_integrations, load_integration
 from integrations.base import BaseIntegration
 from server.config import get_credentials, get_settings
+from server.themes import get_theme
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +36,32 @@ loaded_integrations: dict[str, BaseIntegration] = {}
 background_tasks: set[asyncio.Task[None]] = set()
 
 
+def hex_to_rgb(hex_color: str) -> str:
+    """
+    Convert hex color to RGB values for CSS variables.
+
+    Args:
+        hex_color: Hex color string (e.g., "#ff1b8d")
+
+    Returns:
+        RGB values as comma-separated string (e.g., "255, 27, 141")
+    """
+    hex_color = hex_color.lstrip("#")
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    return f"{r}, {g}, {b}"
+
+
 def setup_templates() -> Environment:
     """Set up Jinja2 template environment."""
     templates_dir = Path(__file__).parent.parent / "templates"
-    return Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=True)
+    env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=True)
+
+    # Add custom filters
+    env.filters["rgb_values"] = hex_to_rgb
+
+    return env
 
 
 template_env = setup_templates()
@@ -195,6 +218,15 @@ async def dashboard() -> str:
     """Render the main dashboard page."""
     settings = get_settings()
 
+    # Get theme
+    try:
+        theme = get_theme(settings.dashboard.theme)
+    except ValueError:
+        logger.warning(
+            "Unknown theme '%s', using 'industrial'", settings.dashboard.theme
+        )
+        theme = get_theme("industrial")
+
     # Pre-render all widgets with initial data
     widgets = []
     for widget_config in settings.layout.widgets:
@@ -224,6 +256,7 @@ async def dashboard() -> str:
     template = template_env.get_template("dashboard.html")
     return template.render(
         title=settings.dashboard.title,
+        theme=theme,
         layout=settings.layout.model_dump(),
         widgets=widgets,
     )

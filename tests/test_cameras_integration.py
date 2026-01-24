@@ -1,7 +1,7 @@
 """Tests for cameras integration."""
 
-from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -13,7 +13,6 @@ from integrations.cameras.integration import (
 )
 from integrations.cameras.src.go2rtc_client import Go2RTCClient
 from integrations.cameras.src.models import (
-    CameraInfo,
     CameraStatus,
     MotionEvent,
     StreamType,
@@ -1030,7 +1029,6 @@ class TestUniFiProtectIntegration:
 
     async def test_initialize_clients_go2rtc_health_check_failure(self):
         """Test initialization when go2rtc health check fails but continues."""
-        import asyncio
 
         config = {
             "host": "https://unifi.local:443",
@@ -1298,7 +1296,6 @@ class TestUniFiProtectIntegration:
 
     async def test_start_event_stream_receives_camera_events(self):
         """Test that start_event_stream yields on camera status changes."""
-        import asyncio
 
         config = {
             "host": "https://unifi.local",
@@ -1385,7 +1382,6 @@ class TestUniFiProtectIntegration:
         mock_heartbeat.action = "heartbeat"
 
         # Empty/None message
-        mock_empty = None
 
         def capture_callback(callback):
             return lambda: None
@@ -1439,7 +1435,9 @@ class TestUniFiProtectIntegration:
         mock_unifi_client.connect = AsyncMock()
         mock_unifi_client.get_cameras = AsyncMock(return_value=[mock_camera_info])
         mock_unifi_client._client = MagicMock()
-        mock_unifi_client._client.subscribe_websocket = MagicMock(return_value=lambda: None)
+        mock_unifi_client._client.subscribe_websocket = MagicMock(
+            return_value=lambda: None
+        )
 
         mock_go2rtc_client = AsyncMock()
         mock_go2rtc_client.check_health = AsyncMock(return_value=True)

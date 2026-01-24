@@ -300,7 +300,9 @@ class UniFiProtectIntegration(BaseIntegration):
                 pass  # pragma: no cover
 
         # Subscribe to WebSocket updates  # pragma: no cover
-        unsubscribe = self._unifi_client._client.subscribe_websocket(websocket_callback)  # pragma: no cover
+        unsubscribe = self._unifi_client._client.subscribe_websocket(
+            websocket_callback
+        )  # pragma: no cover
 
         try:  # pragma: no cover - background task infinite loop block
             # Stream events as they arrive (no polling, pure event-driven)

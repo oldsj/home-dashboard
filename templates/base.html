@@ -23,20 +23,41 @@
               mono: ["IBM Plex Mono", "Courier New", "monospace"],
             },
             colors: {
+              theme: {
+                black: "{{ theme.colors.bg_black }}",
+                darker: "{{ theme.colors.bg_darker }}",
+                dark: "{{ theme.colors.bg_dark }}",
+                panel: "{{ theme.colors.bg_panel }}",
+                border: "{{ theme.colors.bg_border }}",
+                primary: "{{ theme.colors.primary }}",
+                "primary-glow": "{{ theme.colors.primary_glow }}",
+                "primary-dark": "{{ theme.colors.primary_dark }}",
+                secondary: "{{ theme.colors.secondary }}",
+                "secondary-glow": "{{ theme.colors.secondary_glow }}",
+                success: "{{ theme.colors.success }}",
+                warning: "{{ theme.colors.warning }}",
+                error: "{{ theme.colors.error }}",
+                "status-online": "{{ theme.colors.status_online }}",
+                "status-offline": "{{ theme.colors.status_offline }}",
+                "text-primary": "{{ theme.colors.text_primary }}",
+                "text-secondary": "{{ theme.colors.text_secondary }}",
+                "text-muted": "{{ theme.colors.text_muted }}",
+              },
+              // Legacy aliases for backward compatibility
               command: {
-                black: "#000000",
-                darker: "#0a0a0a",
-                dark: "#111111",
-                panel: "#1a1a1a",
-                border: "#2a2a2a",
-                amber: "#ffb000",
-                "amber-glow": "#ff8800",
-                cyan: "#00d4ff",
-                "cyan-dark": "#0088aa",
-                red: "#ff3355",
-                green: "#00ff88",
-                "status-online": "#00ff88",
-                "status-offline": "#555555",
+                black: "{{ theme.colors.bg_black }}",
+                darker: "{{ theme.colors.bg_darker }}",
+                dark: "{{ theme.colors.bg_dark }}",
+                panel: "{{ theme.colors.bg_panel }}",
+                border: "{{ theme.colors.bg_border }}",
+                amber: "{{ theme.colors.secondary }}",
+                "amber-glow": "{{ theme.colors.secondary_glow }}",
+                cyan: "{{ theme.colors.primary }}",
+                "cyan-dark": "{{ theme.colors.primary_dark }}",
+                red: "{{ theme.colors.error }}",
+                green: "{{ theme.colors.success }}",
+                "status-online": "{{ theme.colors.status_online }}",
+                "status-offline": "{{ theme.colors.status_offline }}",
               },
             },
             animation: {
@@ -84,6 +105,11 @@
         letter-spacing: -0.02em;
       }
 
+      :root {
+        --theme-primary-rgb: {{ theme.colors.primary | rgb_values }};
+        --theme-secondary-rgb: {{ theme.colors.secondary | rgb_values }};
+      }
+
       /* CRT scan line effect */
       body::before {
         content: "";
@@ -95,7 +121,7 @@
         background: linear-gradient(
           to bottom,
           transparent,
-          rgba(0, 212, 255, 0.15),
+          rgba(var(--theme-primary-rgb), 0.15),
           transparent
         );
         z-index: 9999;
@@ -116,15 +142,15 @@
             0deg,
             transparent,
             transparent 2px,
-            rgba(0, 212, 255, 0.015) 2px,
-            rgba(0, 212, 255, 0.015) 4px
+            rgba(var(--theme-primary-rgb), 0.015) 2px,
+            rgba(var(--theme-primary-rgb), 0.015) 4px
           ),
           repeating-linear-gradient(
             90deg,
             transparent,
             transparent 2px,
-            rgba(0, 212, 255, 0.015) 2px,
-            rgba(0, 212, 255, 0.015) 4px
+            rgba(var(--theme-primary-rgb), 0.015) 2px,
+            rgba(var(--theme-primary-rgb), 0.015) 4px
           );
         pointer-events: none;
         z-index: 1;
@@ -142,22 +168,22 @@
         height: 6px;
       }
       ::-webkit-scrollbar-track {
-        background: #0a0a0a;
-        border-left: 1px solid #2a2a2a;
+        background: {{ theme.colors.bg_darker }};
+        border-left: 1px solid {{ theme.colors.bg_border }};
       }
       ::-webkit-scrollbar-thumb {
-        background: #00d4ff;
+        background: {{ theme.colors.primary }};
         border-radius: 0;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #00ffff;
-        box-shadow: 0 0 8px rgba(0, 212, 255, 0.6);
+        background: {{ theme.colors.primary_glow }};
+        box-shadow: 0 0 8px rgba(var(--theme-primary-rgb), 0.6);
       }
 
       /* Widget border glow */
       .widget-container {
-        border: 1px solid #2a2a2a;
-        box-shadow: inset 0 0 0 1px rgba(0, 212, 255, 0.1);
+        border: 1px solid {{ theme.colors.bg_border }};
+        box-shadow: inset 0 0 0 1px rgba(var(--theme-primary-rgb), 0.1);
         position: relative;
         transition: all 0.3s ease;
       }
@@ -173,10 +199,10 @@
         border-radius: inherit;
         background: linear-gradient(
             135deg,
-            rgba(0, 212, 255, 0.2),
+            rgba(var(--theme-primary-rgb), 0.2),
             transparent 30%,
             transparent 70%,
-            rgba(255, 176, 0, 0.2)
+            rgba(var(--theme-secondary-rgb), 0.2)
           )
           border-box;
         -webkit-mask:
@@ -205,7 +231,7 @@
         position: absolute;
         width: 12px;
         height: 12px;
-        border: 1px solid #00d4ff;
+        border: 1px solid {{ theme.colors.primary }};
       }
 
       .corner-brackets::before {
@@ -233,7 +259,7 @@
         font-weight: 500;
         letter-spacing: 0.1em;
         text-transform: uppercase;
-        color: #00d4ff;
+        color: {{ theme.colors.primary }};
         opacity: 0.7;
       }
 
@@ -244,19 +270,19 @@
         text-shadow: 0 0 12px currentColor;
       }
 
-      /* Amber accent animations */
-      @keyframes amber-pulse {
+      /* Secondary accent animations */
+      @keyframes secondary-pulse {
         0%,
         100% {
-          box-shadow: 0 0 4px rgba(255, 176, 0, 0.4);
+          box-shadow: 0 0 4px rgba(var(--theme-secondary-rgb), 0.4);
         }
         50% {
-          box-shadow: 0 0 12px rgba(255, 176, 0, 0.8);
+          box-shadow: 0 0 12px rgba(var(--theme-secondary-rgb), 0.8);
         }
       }
 
       .motion-alert {
-        animation: amber-pulse 1.5s ease-in-out infinite;
+        animation: secondary-pulse 1.5s ease-in-out infinite;
       }
 
       /* Responsive dashboard grid */
@@ -286,7 +312,7 @@
 
     {% block head %}{% endblock %}
   </head>
-  <body class="bg-command-black text-command-cyan min-h-screen antialiased">
+  <body class="bg-theme-black text-theme-primary min-h-screen antialiased">
     {% block body %}{% endblock %} {% block scripts %}{% endblock %}
   </body>
 </html>

@@ -150,7 +150,6 @@ class TestBaseIntegration:
 
     def test_template_env_missing_module(self):
         """Test error when integration module cannot be found."""
-        import sys
 
         # Create an integration with a fake module
         class FakeIntegrationConfig(IntegrationConfig):
@@ -181,7 +180,7 @@ class TestBaseIntegration:
         # This will fail because we don't have a widget.html template,
         # but we test that the method exists and works with data
         try:
-            html = integration.render_widget({"status": "ok"})
+            integration.render_widget({"status": "ok"})
         except Exception:
             # Expected since MockIntegration has no widget.html
             pass
@@ -244,7 +243,6 @@ class TestIntegrationDiscovery:
 
     def test_discover_integrations_with_bad_import(self, tmp_path, monkeypatch):
         """Test discovery gracefully handles import errors."""
-        import sys
 
         from integrations import discover_integrations
 
@@ -273,7 +271,7 @@ class TestIntegrationDiscovery:
         integrations = discover_integrations()
 
         # All discovered integrations should be classes
-        for name, cls in integrations.items():
+        for _name, cls in integrations.items():
             assert isinstance(cls, type)
             assert issubclass(cls, BaseIntegration)
             assert hasattr(cls, "name")
@@ -407,9 +405,7 @@ class TestBaseIntegrationErrorHandling:
 
         class FullSecretConfig(IntegrationConfig):
             url: str = Field(default="https://example.com")
-            api_key: str = Field(
-                default="secret", json_schema_extra={"secret": True}
-            )
+            api_key: str = Field(default="secret", json_schema_extra={"secret": True})
             token: str = Field(default="token123", json_schema_extra={"secret": True})
             webhook_url: str = Field(default="https://webhook.example.com")
 

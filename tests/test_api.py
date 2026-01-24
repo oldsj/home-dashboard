@@ -1,10 +1,11 @@
 """Tests for API endpoints."""
 
-import pytest
-from fastapi.testclient import TestClient
 from pathlib import Path
 
-from server.main import app
+import pytest
+from fastapi.testclient import TestClient
+
+from server.main import app, hex_to_rgb
 
 
 @pytest.fixture
@@ -92,7 +93,7 @@ class TestWebSocket:
 
     def test_websocket_disconnect(self, client: TestClient):
         """Test WebSocket disconnect is handled gracefully."""
-        with client.websocket_connect("/ws") as websocket:
+        with client.websocket_connect("/ws"):
             pass
         # Connection should be cleanly closed without errors
 
@@ -118,7 +119,9 @@ class TestDashboardEdgeCases:
             async def broken_fetch():
                 raise RuntimeError("Simulated fetch error")
 
-            monkeypatch.setattr(loaded_integrations["example"], "fetch_data", broken_fetch)
+            monkeypatch.setattr(
+                loaded_integrations["example"], "fetch_data", broken_fetch
+            )
 
             try:
                 response = client.get("/api/widgets/example")
@@ -127,7 +130,9 @@ class TestDashboardEdgeCases:
                 assert "Error loading widget" in response.text
             finally:
                 # Restore
-                monkeypatch.setattr(loaded_integrations["example"], "fetch_data", original_fetch)
+                monkeypatch.setattr(
+                    loaded_integrations["example"], "fetch_data", original_fetch
+                )
 
     def test_error_handling_in_dashboard_widget(self, client: TestClient, monkeypatch):
         """Test error handling when dashboard widget fails."""
@@ -140,7 +145,9 @@ class TestDashboardEdgeCases:
             async def broken_fetch():
                 raise RuntimeError("Simulated fetch error")
 
-            monkeypatch.setattr(loaded_integrations["example"], "fetch_data", broken_fetch)
+            monkeypatch.setattr(
+                loaded_integrations["example"], "fetch_data", broken_fetch
+            )
 
             try:
                 response = client.get("/")
@@ -149,11 +156,13 @@ class TestDashboardEdgeCases:
                 assert "Error loading" in response.text
             finally:
                 # Restore
-                monkeypatch.setattr(loaded_integrations["example"], "fetch_data", original_fetch)
+                monkeypatch.setattr(
+                    loaded_integrations["example"], "fetch_data", original_fetch
+                )
 
     def test_dashboard_with_unloaded_widget(self, client: TestClient, monkeypatch):
         """Test dashboard when widget is configured but not loaded."""
-        from server.config import get_settings, WidgetConfig
+        from server.config import WidgetConfig, get_settings
 
         original_get_settings = get_settings
 
@@ -179,7 +188,7 @@ class TestDashboardEdgeCases:
 
         data = response.json()
         # Each integration should have loaded status
-        for integration_name, info in data.items():
+        for _integration_name, info in data.items():
             assert "loaded" in info
             assert isinstance(info["loaded"], bool)
 
@@ -189,8 +198,8 @@ class TestLoadAllIntegrations:
 
     def test_load_all_integrations_with_empty_layout(self, monkeypatch):
         """Test load_all_integrations with no widgets configured."""
-        from server.main import load_all_integrations
         from server.config import get_settings
+        from server.main import load_all_integrations
 
         # Mock settings to have empty widgets list
         original_get_settings = get_settings
@@ -207,8 +216,8 @@ class TestLoadAllIntegrations:
 
     def test_load_all_integrations_skips_duplicate(self, monkeypatch):
         """Test that load_all_integrations doesn't load same integration twice."""
+        from server.config import WidgetConfig, get_settings
         from server.main import load_all_integrations
-        from server.config import get_settings, WidgetConfig
 
         # Mock settings to have same integration twice
         original_get_settings = get_settings
@@ -230,8 +239,8 @@ class TestLoadAllIntegrations:
 
     def test_load_all_integrations_with_empty_integration_name(self, monkeypatch):
         """Test load_all_integrations skips widgets with empty integration name."""
+        from server.config import WidgetConfig, get_settings
         from server.main import load_all_integrations
-        from server.config import get_settings, WidgetConfig
 
         original_get_settings = get_settings
 
@@ -253,8 +262,8 @@ class TestLoadAllIntegrations:
 
     def test_load_all_integrations_with_unknown_integration(self, monkeypatch):
         """Test load_all_integrations skips unknown integrations."""
+        from server.config import WidgetConfig, get_settings
         from server.main import load_all_integrations
-        from server.config import get_settings, WidgetConfig
 
         original_get_settings = get_settings
 
@@ -274,12 +283,10 @@ class TestLoadAllIntegrations:
 
     def test_load_all_integrations_handles_load_error(self, monkeypatch):
         """Test load_all_integrations handles errors when loading integrations."""
+        from server.config import WidgetConfig, get_settings
         from server.main import load_all_integrations
-        from server.config import get_settings, WidgetConfig
-        from integrations import load_integration
 
         original_get_settings = get_settings
-        original_load_integration = load_integration
 
         def mock_get_settings():
             settings = original_get_settings()
@@ -308,7 +315,7 @@ class TestDashboardWithoutStaticFiles:
         from server.main import create_app
 
         # Mock the static directory path to a non-existent location
-        fake_static_dir = tmp_path / "nonexistent_static"
+        tmp_path / "nonexistent_static"
 
         def mock_path_exists(self):
             return False
@@ -341,10 +348,10 @@ class TestRefreshWidgetPollingMode:
     @pytest.mark.asyncio
     async def test_broadcast_widget_update(self, monkeypatch):
         """Test that broadcast_widget_update handles WebSocket clients."""
-        import asyncio
         import json
-        from server.main import broadcast_widget_update, active_connections
-        from unittest.mock import AsyncMock, MagicMock
+        from unittest.mock import AsyncMock
+
+        from server.main import active_connections, broadcast_widget_update
 
         # Create mock WebSocket connections
         mock_ws1 = AsyncMock()
@@ -375,9 +382,9 @@ class TestRefreshWidgetPollingMode:
     @pytest.mark.asyncio
     async def test_broadcast_widget_update_removes_disconnected(self, monkeypatch):
         """Test that broadcast removes disconnected WebSocket clients."""
-        import asyncio
-        from server.main import broadcast_widget_update, active_connections
         from unittest.mock import AsyncMock
+
+        from server.main import active_connections, broadcast_widget_update
 
         # Create mock WebSocket - one will fail
         mock_ws_good = AsyncMock()
@@ -404,10 +411,10 @@ class TestRefreshWidgetPollingMode:
     async def test_refresh_widget_with_event_stream(self, monkeypatch):
         """Test refresh_widget processes event stream successfully."""
         import asyncio
-        from server.main import refresh_widget, broadcast_widget_update
+        from typing import Any, AsyncIterator
+
         from integrations.base import BaseIntegration, IntegrationConfig
-        from typing import AsyncIterator, Any
-        from unittest.mock import AsyncMock
+        from server.main import refresh_widget
 
         class TestConfig(IntegrationConfig):
             pass
@@ -453,9 +460,10 @@ class TestRefreshWidgetPollingMode:
     async def test_refresh_widget_polling_mode(self, monkeypatch):
         """Test refresh_widget falls back to polling mode when event stream raises TypeError."""
         import asyncio
-        from server.main import refresh_widget
-        from integrations.base import BaseIntegration, IntegrationConfig
         from typing import Any
+
+        from integrations.base import BaseIntegration, IntegrationConfig
+        from server.main import refresh_widget
 
         class TestConfig(IntegrationConfig):
             pass
@@ -501,3 +509,136 @@ class TestRefreshWidgetPollingMode:
 
         # Should have broadcast at least twice (in polling mode)
         assert len(broadcast_calls) >= 2
+
+
+class TestHexToRgbFunction:
+    """Tests for hex_to_rgb color conversion function."""
+
+    def test_hex_to_rgb_basic(self):
+        """Test basic hex to RGB conversion."""
+        assert hex_to_rgb("#ffffff") == "255, 255, 255"
+        assert hex_to_rgb("#000000") == "0, 0, 0"
+
+    def test_hex_to_rgb_pink(self):
+        """Test hex to RGB conversion with pink color."""
+        assert hex_to_rgb("#ff1b8d") == "255, 27, 141"
+
+    def test_hex_to_rgb_cyan(self):
+        """Test hex to RGB conversion with cyan color."""
+        assert hex_to_rgb("#00d4ff") == "0, 212, 255"
+
+    def test_hex_to_rgb_without_hash(self):
+        """Test hex to RGB conversion without leading hash."""
+        # Function uses lstrip('#') so it should work with or without
+        result = hex_to_rgb("ff1b8d")
+        assert result == "255, 27, 141"
+
+    def test_hex_to_rgb_various_colors(self):
+        """Test hex to RGB with various colors."""
+        assert hex_to_rgb("#ffb000") == "255, 176, 0"  # Amber
+        assert hex_to_rgb("#00ff88") == "0, 255, 136"  # Green
+        assert hex_to_rgb("#ff3355") == "255, 51, 85"  # Red
+
+
+class TestThemeRendering:
+    """Tests for theme rendering in dashboard."""
+
+    def test_dashboard_with_pink_theme(self, client: TestClient, monkeypatch):
+        """Test dashboard renders with pink theme."""
+        from server.config import get_settings
+
+        original_get_settings = get_settings
+
+        def mock_get_settings():
+            settings = original_get_settings()
+            settings.dashboard.theme = "pink"
+            return settings
+
+        monkeypatch.setattr("server.main.get_settings", mock_get_settings)
+
+        response = client.get("/")
+        assert response.status_code == 200
+        # Should contain pink theme color
+        assert "#ff1b8d" in response.text  # Pink primary color
+
+    def test_dashboard_with_industrial_theme(self, client: TestClient, monkeypatch):
+        """Test dashboard renders with industrial theme."""
+        from server.config import get_settings
+
+        original_get_settings = get_settings
+
+        def mock_get_settings():
+            settings = original_get_settings()
+            settings.dashboard.theme = "industrial"
+            return settings
+
+        monkeypatch.setattr("server.main.get_settings", mock_get_settings)
+
+        response = client.get("/")
+        assert response.status_code == 200
+        # Should contain industrial theme cyan color
+        assert "#00d4ff" in response.text
+
+    def test_dashboard_with_unknown_theme_fallback(
+        self, client: TestClient, monkeypatch
+    ):
+        """Test dashboard falls back to industrial when theme is unknown."""
+        from server.config import get_settings
+
+        original_get_settings = get_settings
+
+        def mock_get_settings():
+            settings = original_get_settings()
+            settings.dashboard.theme = "nonexistent_theme"
+            return settings
+
+        monkeypatch.setattr("server.main.get_settings", mock_get_settings)
+
+        response = client.get("/")
+        assert response.status_code == 200
+        # Should fall back to industrial theme
+        assert "#00d4ff" in response.text  # Industrial cyan
+
+    def test_dashboard_contains_theme_css_variables(self, client: TestClient):
+        """Test dashboard contains CSS variables for theme colors."""
+        response = client.get("/")
+        assert response.status_code == 200
+        # Should have CSS variables defined
+        assert "--theme-primary-rgb" in response.text
+        assert "--theme-secondary-rgb" in response.text
+
+    def test_dashboard_with_neon_theme(self, client: TestClient, monkeypatch):
+        """Test dashboard renders with neon theme."""
+        from server.config import get_settings
+
+        original_get_settings = get_settings
+
+        def mock_get_settings():
+            settings = original_get_settings()
+            settings.dashboard.theme = "neon"
+            return settings
+
+        monkeypatch.setattr("server.main.get_settings", mock_get_settings)
+
+        response = client.get("/")
+        assert response.status_code == 200
+        # Should contain neon theme purple color
+        assert "#b833ff" in response.text
+
+    def test_dashboard_with_matrix_theme(self, client: TestClient, monkeypatch):
+        """Test dashboard renders with matrix theme."""
+        from server.config import get_settings
+
+        original_get_settings = get_settings
+
+        def mock_get_settings():
+            settings = original_get_settings()
+            settings.dashboard.theme = "matrix"
+            return settings
+
+        monkeypatch.setattr("server.main.get_settings", mock_get_settings)
+
+        response = client.get("/")
+        assert response.status_code == 200
+        # Should contain matrix theme green color
+        assert "#00ff41" in response.text
