@@ -13,10 +13,19 @@ echo "Setting up dashboard on ${PI_HOST}..."
 echo "Installing dependencies..."
 ssh "${PI_HOST}" "sudo apt-get update -qq && sudo apt-get install -y -qq git curl"
 
-# Install Docker (remove old docker.io if present, install official Docker CE)
+# Install Docker (reinstall if missing or broken)
 echo "Installing Docker..."
-ssh "${PI_HOST}" 'sudo apt-get remove -y -qq docker.io docker-compose containerd runc 2>/dev/null || true'
-ssh "${PI_HOST}" 'command -v docker &>/dev/null && docker compose version &>/dev/null || (curl -fsSL https://get.docker.com | sudo sh)'
+ssh "${PI_HOST}" '
+if docker compose version &>/dev/null && docker buildx version &>/dev/null; then
+    echo "Docker already installed correctly"
+else
+    # Remove old/conflicting packages
+    sudo apt-get remove -y $(dpkg --get-selections docker.io docker-compose docker-doc podman-docker containerd runc docker-buildx 2>/dev/null | cut -f1) 2>/dev/null || true
+    # Install via convenience script then ensure all plugins
+    curl -fsSL https://get.docker.com | sudo sh
+    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+fi
+'
 ssh "${PI_HOST}" 'groups | grep -q docker || sudo usermod -aG docker $USER'
 
 # Clone or update repo
