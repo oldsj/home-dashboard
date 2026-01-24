@@ -315,3 +315,29 @@ async def list_integrations() -> dict[str, dict[str, Any]]:
         }
         for name, cls in discovered.items()
     }
+
+
+@app.get("/api/debug/config")
+async def debug_config() -> dict[str, Any]:
+    """Debug endpoint to view current configuration and theme."""
+    settings = get_settings()
+    try:
+        theme = get_theme(settings.dashboard.theme)
+        theme_status = {
+            "name": theme["name"],
+            "display_name": theme["display_name"],
+            "loaded_successfully": True,
+        }
+    except ValueError as e:
+        theme_status = {"error": str(e), "loaded_successfully": False}
+
+    return {
+        "dashboard": {
+            "title": settings.dashboard.title,
+            "theme": settings.dashboard.theme,
+            "theme_status": theme_status,
+            "refresh_interval": settings.dashboard.refresh_interval,
+            "resolution": settings.dashboard.resolution,
+        },
+        "layout": settings.layout.model_dump(),
+    }
