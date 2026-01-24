@@ -4,8 +4,6 @@ services:
     container_name: dashboard
     ports:
       - 9753:9753
-    volumes:
-      - ./config:/app/config
     networks:
       - dashboard-network
     environment:
@@ -26,6 +24,8 @@ services:
         - action: sync+restart
           path: ./config
           target: /app/config
+          ignore:
+            - go2rtc.yaml
         - action: sync
           path: ./static
           target: /app/static
