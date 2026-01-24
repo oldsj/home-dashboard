@@ -1,132 +1,199 @@
-{# Camera grid widget template #}
+{# Camera surveillance grid - Command Center style #}
 <div class="h-full flex flex-col">
-  {# Widget header #}
-  <div class="flex items-center justify-between mb-4">
-    <h2 class="text-lg font-semibold text-white">Cameras</h2>
-    <div class="flex items-center gap-2">
-      <span class="text-xs text-gray-400"
-        >{{ data.cameras|length }} cameras</span
+  {# Widget header with telemetry #}
+  <div
+    class="flex items-center justify-between mb-3 pb-2 border-b border-command-border"
+  >
+    <div class="flex items-center gap-3">
+      <div class="w-1 h-4 bg-command-amber"></div>
+      <h2 class="text-sm font-bold tracking-wider text-white uppercase">
+        Surveillance_Grid
+      </h2>
+    </div>
+    <div class="text-[0.65rem] tracking-wider">
+      <span class="text-command-cyan opacity-60">ACTIVE</span>
+      <span class="font-bold text-command-amber ml-1"
+        >{{ '%02d'|format(data.cameras|selectattr('status', 'equalto',
+        'online')|list|length) }}</span
       >
-      <select
-        id="stream-type-selector"
-        class="text-xs bg-gray-700 text-white rounded px-2 py-1 border border-gray-600"
-      >
-        <!-- prettier-ignore -->
-        <option value="webrtc" {% if data.default_stream_type == "webrtc" %}selected{% endif %}>WebRTC</option>
-        <!-- prettier-ignore -->
-        <option value="mjpeg" {% if data.default_stream_type == "mjpeg" %}selected{% endif %}>MJPEG</option>
-        <!-- prettier-ignore -->
-        <option value="hls" {% if data.default_stream_type == "hls" %}selected{% endif %}>HLS</option>
-      </select>
     </div>
   </div>
 
-  {# Camera grid #}
-  <div class="flex-1 grid grid-cols-2 gap-3 overflow-y-auto">
-    {% for camera in data.cameras %}
+  {# Camera grid - custom layout #}
+  <div class="flex-1 grid gap-2 overflow-y-auto pr-1 camera-grid">
+    {% for camera in data.cameras if camera.status == 'online' %}
     <div
-      class="bg-gray-800/50 rounded-lg overflow-hidden border border-gray-700 flex flex-col"
+      class="bg-command-darker border border-command-border flex flex-col relative group hover:border-command-cyan/40 transition-colors camera-item"
+      data-camera-name="{{ camera.name }}"
     >
-      {# Camera name and status #}
-      <div class="bg-gray-900/70 px-3 py-2 flex items-center justify-between">
-        <span class="text-sm font-medium text-white">{{ camera.name }}</span>
+      {# Camera header with status telemetry #}
+      <div
+        class="bg-command-black/90 px-2 py-1.5 flex items-center justify-between border-b border-command-border"
+      >
+        <span
+          class="text-[0.65rem] font-bold text-white tracking-wider uppercase"
+          >{{ camera.name }}</span
+        >
         <div class="flex items-center gap-2">
           {% if camera.motion_detected %}
-          <span class="flex items-center gap-1 text-xs text-red-400">
-            <svg class="w-3 h-3 fill-current animate-pulse" viewBox="0 0 20 20">
-              <path
-                d="M10 2a8 8 0 100 16 8 8 0 000-16zm1 11H9v-2h2v2zm0-4H9V5h2v4z"
-              />
-            </svg>
-            Motion
-          </span>
+          <div class="flex items-center gap-1 motion-alert">
+            <div class="w-1.5 h-1.5 bg-command-amber rounded-full"></div>
+            <span
+              class="text-[0.6rem] text-command-amber font-mono tracking-wider"
+              >MOTION</span
+            >
+          </div>
           {% endif %} {% if camera.is_recording %}
-          <span
-            class="w-2 h-2 bg-red-500 rounded-full animate-pulse"
+          <div
+            class="w-1.5 h-1.5 bg-command-red rounded-full animate-glow-pulse status-indicator"
             title="Recording"
-          ></span>
+          ></div>
           {% endif %}
-          <span
-            class="w-2 h-2 rounded-full {{ 'bg-green-500' if camera.status == 'online' else 'bg-gray-500' }}"
+          <div
+            class="w-1.5 h-1.5 rounded-full {{ 'bg-command-green' if camera.status == 'online' else 'bg-command-border' }} status-indicator"
             title="{{ camera.status|capitalize }}"
-          ></span>
+          ></div>
         </div>
       </div>
 
-      {# Video stream #}
+      {# Video stream container - WebRTC only #}
       <div
-        class="relative flex-1 bg-gray-900 camera-stream-container"
+        class="relative bg-command-black camera-stream-container"
         data-camera-id="{{ camera.id }}"
         data-camera-name="{{ camera.name }}"
         data-webrtc-url="{{ camera.webrtc_url }}"
-        data-mjpeg-url="{{ camera.mjpeg_url }}"
-        data-hls-url="{{ camera.hls_url }}"
       >
-        {% if camera.status == 'online' %} {# WebRTC video element (default) #}
+        {# WebRTC video element #}
         <video
           id="video-webrtc-{{ camera.id }}"
-          class="w-full h-full object-cover stream-webrtc"
-          data-stream-type="webrtc"
+          class="w-full h-auto object-contain stream-webrtc"
           autoplay
           playsinline
           muted
-          style="display: {{ 'block' if data.default_stream_type == 'webrtc' else 'none' }}"
         ></video>
 
-        {# MJPEG image element #}
-        <img
-          id="video-mjpeg-{{ camera.id }}"
-          class="w-full h-full object-cover stream-mjpeg"
-          data-stream-type="mjpeg"
-          style="display: {{ 'block' if data.default_stream_type == 'mjpeg' else 'none' }}"
-        />
-
-        {# HLS video element #}
-        <video
-          id="video-hls-{{ camera.id }}"
-          class="w-full h-full object-cover stream-hls"
-          data-stream-type="hls"
-          controls
-          autoplay
-          playsinline
-          muted
-          style="display: {{ 'block' if data.default_stream_type == 'hls' else 'none' }}"
-        ></video>
-
-        {% else %}
+        {# Corner frame overlay for active feed #}
         <div
-          class="absolute inset-0 flex items-center justify-center text-gray-500 text-sm"
+          class="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
         >
-          Camera Offline
+          <div
+            class="absolute top-0 left-0 w-3 h-3 border-l border-t border-command-cyan"
+          ></div>
+          <div
+            class="absolute top-0 right-0 w-3 h-3 border-r border-t border-command-cyan"
+          ></div>
+          <div
+            class="absolute bottom-0 left-0 w-3 h-3 border-l border-b border-command-cyan"
+          ></div>
+          <div
+            class="absolute bottom-0 right-0 w-3 h-3 border-r border-b border-command-cyan"
+          ></div>
         </div>
-        {% endif %}
       </div>
 
-      {# Camera info footer #}
+      {# Camera info footer with telemetry data #}
       <div
-        class="bg-gray-900/50 px-3 py-1 text-xs text-gray-400 flex justify-between"
+        class="bg-command-black/70 px-2 py-1 text-[0.55rem] text-command-cyan/60 flex justify-between border-t border-command-border font-mono tracking-wider"
       >
-        <span>{{ camera.model or 'Unknown' }}</span>
-        <span>{{ camera.resolution or '' }}</span>
+        <span class="uppercase">{{ camera.model or 'UNKNOWN' }}</span>
+        <span>{{ camera.resolution or '--' }}</span>
       </div>
     </div>
     {% endfor %}
   </div>
 
-  {# Recent motion events #} {% if data.recent_motion_events %}
-  <div class="mt-4 pt-4 border-t border-gray-700">
-    <h3 class="text-sm font-medium text-gray-300 mb-2">Recent Motion</h3>
-    <div class="space-y-1 max-h-24 overflow-y-auto">
+  {# Recent motion events log #} {% if data.recent_motion_events %}
+  <div class="mt-3 pt-2 border-t border-command-border">
+    <div class="flex items-center gap-2 mb-1.5">
+      <div class="w-0.5 h-2.5 bg-command-amber"></div>
+      <h3
+        class="text-[0.65rem] font-bold tracking-widest text-command-amber uppercase"
+      >
+        Motion_Log
+      </h3>
+      <div
+        class="flex-1 h-px bg-gradient-to-r from-command-amber/30 to-transparent"
+      ></div>
+    </div>
+    <div class="space-y-0.5 max-h-20 overflow-y-auto pr-1">
       {% for event in data.recent_motion_events[:5] %}
-      <div class="text-xs text-gray-400 flex justify-between">
-        <span>{{ event.camera_name }}</span>
-        <span>{{ event.timestamp.strftime('%I:%M %p') }}</span>
+      <div
+        class="flex justify-between text-[0.6rem] font-mono tracking-wider bg-command-darker/40 px-2 py-1"
+      >
+        <span class="text-command-cyan/80">{{ event.camera_name }}</span>
+        <span class="text-command-amber/60"
+          >{{ event.timestamp.strftime('%H:%M:%S') }}</span
+        >
       </div>
       {% endfor %}
     </div>
   </div>
   {% endif %}
 </div>
+
+<style>
+  /* Custom camera grid layout */
+  .camera-grid {
+    grid-template-columns: repeat(2, 1fr);
+    grid-auto-rows: min-content;
+    align-content: start;
+  }
+
+  /* Front Doorbell: Full width on top, but constrained */
+  .camera-item[data-camera-name*="DOORBELL"],
+  .camera-item[data-camera-name*="Doorbell"],
+  .camera-item[data-camera-name*="doorbell"] {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  /* Doorbell camera video: constrained height, maintains 4:3 ratio */
+  .camera-item[data-camera-name*="DOORBELL"] .stream-webrtc,
+  .camera-item[data-camera-name*="Doorbell"] .stream-webrtc,
+  .camera-item[data-camera-name*="doorbell"] .stream-webrtc {
+    max-height: 280px;
+  }
+
+  /* Bottom row cameras: smaller, maintains 16:9 ratio */
+  .camera-item[data-camera-name*="DRIVEWAY"] .stream-webrtc,
+  .camera-item[data-camera-name*="Driveway"] .stream-webrtc,
+  .camera-item[data-camera-name*="driveway"] .stream-webrtc,
+  .camera-item[data-camera-name*="PORCH"] .stream-webrtc,
+  .camera-item[data-camera-name*="Porch"] .stream-webrtc,
+  .camera-item[data-camera-name*="porch"] .stream-webrtc {
+    max-height: 180px;
+  }
+
+  /* Driveway: Bottom left */
+  .camera-item[data-camera-name*="DRIVEWAY"],
+  .camera-item[data-camera-name*="Driveway"],
+  .camera-item[data-camera-name*="driveway"] {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  /* Front Porch: Bottom right */
+  .camera-item[data-camera-name*="PORCH"],
+  .camera-item[data-camera-name*="Porch"],
+  .camera-item[data-camera-name*="porch"] {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  /* Any other cameras: flow naturally */
+  .camera-item:not([data-camera-name*="DOORBELL"]):not(
+      [data-camera-name*="Doorbell"]
+    ):not([data-camera-name*="doorbell"]):not(
+      [data-camera-name*="DRIVEWAY"]
+    ):not([data-camera-name*="Driveway"]):not(
+      [data-camera-name*="driveway"]
+    ):not([data-camera-name*="PORCH"]):not([data-camera-name*="Porch"]):not(
+      [data-camera-name*="porch"]
+    ) {
+    grid-column: auto;
+    grid-row: auto;
+  }
+</style>
 
 <script>
   // Track connected cameras globally - survives DOM updates
@@ -142,19 +209,14 @@
       this.cameraId = container.dataset.cameraId;
       this.cameraName = container.dataset.cameraName;
       this.webrtcUrl = container.dataset.webrtcUrl;
-      this.mjpegUrl = container.dataset.mjpegUrl;
-      this.hlsUrl = container.dataset.hlsUrl;
 
       this.videoWebRTC = container.querySelector(".stream-webrtc");
-      this.imageMJPEG = container.querySelector(".stream-mjpeg");
-      this.videoHLS = container.querySelector(".stream-hls");
 
       // Create or reuse loading overlay (not in server HTML)
       this.loadingOverlay = this._getOrCreateOverlay();
 
       this.pc = null;
       this.ws = null;
-      this.currentType = null;
     }
 
     _getOrCreateOverlay() {
@@ -162,13 +224,14 @@
       let overlay = window._loadingOverlays.get(this.cameraId);
 
       if (!overlay || !document.contains(overlay)) {
-        // Create new overlay using DOM methods
+        // Create new overlay with command center styling
         overlay = document.createElement("div");
         overlay.className =
-          "absolute inset-0 flex items-center justify-center bg-gray-900/80 loading-overlay";
+          "absolute inset-0 flex items-center justify-center bg-command-black/90 loading-overlay border border-command-border/30";
         const text = document.createElement("div");
-        text.className = "text-gray-400 text-sm";
-        text.textContent = "Loading...";
+        text.className =
+          "text-command-cyan text-[0.65rem] font-mono tracking-widest animate-pulse";
+        text.textContent = "CONNECTING...";
         overlay.appendChild(text);
         window._loadingOverlays.set(this.cameraId, overlay);
       }
@@ -184,20 +247,7 @@
       return overlay;
     }
 
-    async startStream(type) {
-      this.stopStream();
-      this.currentType = type;
-
-      if (type === "webrtc") {
-        await this.startWebRTC();
-      } else if (type === "mjpeg") {
-        this.startMJPEG();
-      } else if (type === "hls") {
-        this.startHLS();
-      }
-    }
-
-    async startWebRTC() {
+    async start() {
       if (!this.webrtcUrl) return;
 
       try {
@@ -209,7 +259,6 @@
         });
 
         // Add transceivers and create MediaStream from receiver tracks
-        // (this is how go2rtc's own webrtc.html does it)
         const videoTrack = this.pc.addTransceiver("video", {
           direction: "recvonly",
         }).receiver.track;
@@ -221,7 +270,6 @@
         // Hide loading when video starts playing
         this.videoWebRTC.onloadeddata = () => {
           this.loadingOverlay.classList.add("hidden");
-          // Mark this camera as connected
           window._connectedCameras.add(this.container.dataset.cameraId);
         };
 
@@ -260,7 +308,6 @@
               sdp: msg.value,
             });
           } else if (msg.type === "webrtc/candidate") {
-            // go2rtc sends candidate string directly as msg.value
             await this.pc.addIceCandidate({
               candidate: msg.value,
               sdpMid: "0",
@@ -270,44 +317,22 @@
 
         this.ws.onerror = () => {
           const errorDiv = document.createElement("div");
-          errorDiv.className = "text-red-400 text-sm";
-          errorDiv.textContent = "Connection failed";
+          errorDiv.className =
+            "text-command-red text-[0.65rem] font-mono tracking-widest";
+          errorDiv.textContent = "CONNECTION_FAILED";
           this.loadingOverlay.replaceChildren(errorDiv);
         };
       } catch (error) {
         console.error("WebRTC error:", error);
         const errorDiv = document.createElement("div");
-        errorDiv.className = "text-red-400 text-sm";
-        errorDiv.textContent = "Failed to load";
+        errorDiv.className =
+          "text-command-red text-[0.65rem] font-mono tracking-widest";
+        errorDiv.textContent = "ERROR";
         this.loadingOverlay.replaceChildren(errorDiv);
       }
     }
 
-    startMJPEG() {
-      if (!this.mjpegUrl) return;
-      this.imageMJPEG.src = this.mjpegUrl;
-      this.imageMJPEG.onload = () => {
-        this.loadingOverlay.classList.add("hidden");
-        window._connectedCameras.add(this.container.dataset.cameraId);
-      };
-    }
-
-    startHLS() {
-      if (!this.hlsUrl) return;
-      // For HLS, use native browser support or hls.js
-      if (this.videoHLS.canPlayType("application/vnd.apple.mpegurl")) {
-        this.videoHLS.src = this.hlsUrl;
-        this.loadingOverlay.classList.add("hidden");
-        window._connectedCameras.add(this.container.dataset.cameraId);
-      } else {
-        // TODO: Load hls.js for browsers without native HLS support
-        this.videoHLS.src = this.hlsUrl;
-        this.loadingOverlay.classList.add("hidden");
-        window._connectedCameras.add(this.container.dataset.cameraId);
-      }
-    }
-
-    stopStream() {
+    stop() {
       if (this.pc) {
         this.pc.close();
         this.pc = null;
@@ -320,25 +345,8 @@
         this.videoWebRTC.srcObject.getTracks().forEach((track) => track.stop());
         this.videoWebRTC.srcObject = null;
       }
-      this.imageMJPEG.src = "";
-      this.videoHLS.src = "";
       this.loadingOverlay.classList.remove("hidden");
       window._connectedCameras.delete(this.container.dataset.cameraId);
-    }
-
-    switchType(newType) {
-      // Hide all streams
-      this.videoWebRTC.style.display = "none";
-      this.imageMJPEG.style.display = "none";
-      this.videoHLS.style.display = "none";
-
-      // Show selected stream
-      if (newType === "webrtc") this.videoWebRTC.style.display = "block";
-      else if (newType === "mjpeg") this.imageMJPEG.style.display = "block";
-      else if (newType === "hls") this.videoHLS.style.display = "block";
-
-      // Start new stream
-      this.startStream(newType);
     }
   }
 
@@ -368,13 +376,11 @@
       }
 
       // Always hide loading overlay for active connections
-      loadingOverlay.classList.add("hidden");
+      if (loadingOverlay) loadingOverlay.classList.add("hidden");
     } else {
       // Create new streamer for this camera
       const streamer = new CameraStreamer(container);
-      const defaultType =
-        document.getElementById("stream-type-selector")?.value || "webrtc";
-      streamer.startStream(defaultType);
+      streamer.start();
 
       // Store reference to the stream
       window._cameraStreams.set(cameraId, {
@@ -405,14 +411,4 @@
       setTimeout(() => clearInterval(checkStream), 10000);
     }
   });
-
-  // Handle stream type changes
-  document
-    .getElementById("stream-type-selector")
-    ?.addEventListener("change", (e) => {
-      const newType = e.target.value;
-      window._cameraStreams.forEach((stream) => {
-        if (stream.streamer) stream.streamer.switchType(newType);
-      });
-    });
 </script>

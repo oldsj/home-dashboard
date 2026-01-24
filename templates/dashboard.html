@@ -2,15 +2,45 @@
 body %}
 <div
   id="dashboard"
-  class="h-screen w-screen overflow-hidden"
+  class="h-screen w-screen overflow-hidden relative"
   style="padding: {{ layout.padding | default(16) }}px;"
   hx-ext="ws"
   ws-connect="/ws"
 >
+  <!-- System header bar -->
+  <div
+    class="absolute top-0 left-0 right-0 h-8 bg-command-darker border-b border-command-border flex items-center justify-between px-4 z-10"
+  >
+    <div class="flex items-center gap-6">
+      <div class="flex items-center gap-2">
+        <div
+          class="w-1.5 h-1.5 bg-command-green rounded-full status-indicator"
+        ></div>
+        <span
+          class="text-[0.7rem] font-medium tracking-wider text-command-green"
+          >SYSTEM_ACTIVE</span
+        >
+      </div>
+      <div class="text-[0.65rem] text-command-cyan opacity-60 tracking-wide">
+        {{ title|upper }}
+      </div>
+    </div>
+    <div
+      class="flex items-center gap-4 text-[0.65rem] text-command-amber opacity-80"
+    >
+      <span id="sys-time" class="font-mono tracking-wider"></span>
+      <span class="opacity-50">|</span>
+      <span class="tracking-wider"
+        >GRID_{{ layout.columns }}x{{ layout.rows }}</span
+      >
+    </div>
+  </div>
+
   <!-- Dashboard grid -->
   <div
-    class="grid h-full"
+    class="grid h-full pt-8 dashboard-grid"
     style="
+      --grid-cols: {{ layout.columns | default(3) }};
       grid-template-columns: repeat({{ layout.columns | default(3) }}, 1fr);
       grid-template-rows: repeat({{ layout.rows | default(2) }}, 1fr);
       gap: {{ layout.gap | default(16) }}px;
@@ -19,7 +49,7 @@ body %}
     {% for widget in widgets %}
     <div
       id="widget-{{ widget.name }}"
-      class="widget-container bg-gray-800 rounded-xl p-4 shadow-lg overflow-hidden"
+      class="widget-container bg-command-dark rounded-none p-4 overflow-hidden corner-brackets"
       style="
         grid-column: {{ widget.position.col | default(1) }} / span {{ widget.position.width | default(1) }};
         grid-row: {{ widget.position.row | default(1) }} / span {{ widget.position.height | default(1) }};
@@ -32,6 +62,16 @@ body %}
 </div>
 
 <script>
+  // System time display
+  function updateSystemTime() {
+    const now = new Date();
+    const timeStr = now.toTimeString().split(" ")[0];
+    const dateStr = now.toISOString().split("T")[0];
+    document.getElementById("sys-time").textContent = `${dateStr}_${timeStr}`;
+  }
+  updateSystemTime();
+  setInterval(updateSystemTime, 1000);
+
   // Handle WebSocket messages for real-time updates
   // Note: Widget HTML is server-rendered from trusted integration templates
   document.body.addEventListener("htmx:wsAfterMessage", function (event) {
