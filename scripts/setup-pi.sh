@@ -15,17 +15,18 @@ ssh "${PI_HOST}" "sudo apt-get update -qq && sudo apt-get install -y -qq git cur
 
 # Install Docker (reinstall if missing or broken)
 echo "Installing Docker..."
-ssh "${PI_HOST}" '
+FRESH_DOCKER=$(ssh "${PI_HOST}" '
 if docker compose version &>/dev/null && docker buildx version &>/dev/null; then
-    echo "Docker already installed correctly"
+    echo "no"
 else
     # Remove old/conflicting packages
     sudo apt-get remove -y $(dpkg --get-selections docker.io docker-compose docker-doc podman-docker containerd runc docker-buildx 2>/dev/null | cut -f1) 2>/dev/null || true
     # Install via convenience script then ensure all plugins
     curl -fsSL https://get.docker.com | sudo sh
     sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    echo "yes"
 fi
-'
+')
 ssh "${PI_HOST}" 'groups | grep -q docker || sudo usermod -aG docker $USER'
 
 # Clone or update repo
@@ -40,8 +41,8 @@ fi
 
 # Copy local credentials if they exist
 if [[ -f config/credentials.yaml ]]; then
-	echo "Copying credentials..."
-	scp config/credentials.yaml "${PI_HOST}:~/dashboard/config/credentials.yaml"
+    echo "Copying credentials..."
+    scp config/credentials.yaml "${PI_HOST}:~/dashboard/config/credentials.yaml"
 fi
 
 # Create systemd services
@@ -82,13 +83,20 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF'
 
-# Enable and start services
-echo "Starting services..."
-ssh "${PI_HOST}" "sudo systemctl daemon-reload && sudo systemctl enable dashboard dashboard-updater && sudo systemctl restart dashboard dashboard-updater"
+ssh "${PI_HOST}" "sudo systemctl daemon-reload && sudo systemctl enable dashboard dashboard-updater"
 
-echo ""
-echo "Setup complete!"
-echo "Dashboard will be at: http://${PI_HOST}:9753"
-echo ""
-echo "Note: If this is a fresh Docker install, reboot for permissions:"
-echo "  ssh ${PI_HOST} 'sudo reboot'"
+# Handle fresh Docker install vs update
+if [[ "${FRESH_DOCKER}" == *"yes"* ]]; then
+    echo ""
+    echo "Fresh Docker install detected - rebooting for permissions..."
+    ssh "${PI_HOST}" "sudo reboot" || true
+    echo ""
+    echo "Pi is rebooting. Dashboard will start automatically at:"
+    echo "  http://${PI_HOST}:9753"
+else
+    echo "Starting services..."
+    ssh "${PI_HOST}" "sudo systemctl restart dashboard dashboard-updater"
+    echo ""
+    echo "Setup complete!"
+    echo "Dashboard will be at: http://${PI_HOST}:9753"
+fi
