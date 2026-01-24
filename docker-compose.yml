@@ -23,6 +23,9 @@ services:
         - action: sync+restart
           path: ./templates
           target: /app/templates
+        - action: sync+restart
+          path: ./config
+          target: /app/config
         - action: sync
           path: ./static
           target: /app/static
