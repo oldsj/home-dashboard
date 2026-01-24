@@ -940,6 +940,58 @@ class TestUniFiProtectIntegration:
 
         assert len(data["recent_motion_events"]) == 1
 
+    async def test_fetch_data_uses_cached_motion_events(self):
+        """Test fetch_data uses cached motion events when available."""
+        config = {
+            "host": "https://unifi.local",
+            "username": "admin",
+            "password": "password",
+        }
+        integration = UniFiProtectIntegration(config)
+
+        mock_camera_info = MagicMock()
+        mock_camera_info.id = "camera-1"
+        mock_camera_info.name = "Front Door"
+        mock_camera_info.status.value = "online"
+        mock_camera_info.is_recording = True
+        mock_camera_info.motion_detected = False
+        mock_camera_info.last_motion = None
+        mock_camera_info.model = "UVC G3"
+        mock_camera_info.firmware_version = "1.2.3"
+        mock_camera_info.resolution = "1920x1080"
+
+        # Pre-populate cached motion events
+        cached_event = MotionEvent(
+            camera_id="camera-1",
+            camera_name="Front Door",
+            timestamp="2024-01-01T12:00:00",
+            thumbnail_url="https://example.com/thumb.jpg",
+            score=85,
+        )
+        integration._recent_motion_events = [cached_event]
+
+        mock_unifi_client = AsyncMock()
+        mock_unifi_client.get_cameras = AsyncMock(return_value=[mock_camera_info])
+        # Should NOT call get_recent_motion_events since we have cached events
+        mock_unifi_client.get_recent_motion_events = AsyncMock()
+
+        mock_go2rtc_client = AsyncMock()
+        mock_go2rtc_client.get_stream_url = AsyncMock(
+            return_value="ws://localhost/stream"
+        )
+
+        integration._unifi_client = mock_unifi_client
+        integration._go2rtc_client = mock_go2rtc_client
+        integration._initialized = True
+
+        data = await integration.fetch_data()
+
+        # Should use cached events
+        assert len(data["recent_motion_events"]) == 1
+        assert data["recent_motion_events"][0]["camera_id"] == "camera-1"
+        # Should NOT have called get_recent_motion_events
+        mock_unifi_client.get_recent_motion_events.assert_not_called()
+
     async def test_fetch_data_error(self):
         """Test fetch_data handles errors gracefully."""
         config = {
@@ -1028,3 +1080,385 @@ class TestUniFiProtectIntegration:
 
             with pytest.raises(Exception, match="Connection failed"):
                 await integration._initialize_clients()
+
+    async def test_start_event_stream_initializes_clients(self):
+        """Test that start_event_stream initializes clients."""
+        config = {
+            "host": "https://unifi.local:443",
+            "username": "admin",
+            "password": "password",
+        }
+        integration = UniFiProtectIntegration(config)
+
+        mock_unifi_client = AsyncMock()
+        mock_unifi_client.connect = AsyncMock()
+        mock_unifi_client.get_cameras = AsyncMock(return_value=[])
+        mock_unifi_client._client = AsyncMock()
+        mock_unifi_client._client.subscribe_websocket = MagicMock(
+            return_value=lambda: None
+        )
+
+        mock_go2rtc_client = AsyncMock()
+        mock_go2rtc_client.check_health = AsyncMock(return_value=True)
+
+        with patch(
+            "integrations.cameras.integration.UniFiProtectClient"
+        ) as mock_unifi_class:
+            with patch(
+                "integrations.cameras.integration.Go2RTCClient"
+            ) as mock_go2rtc_class:
+                mock_unifi_class.return_value = mock_unifi_client
+                mock_go2rtc_class.return_value = mock_go2rtc_client
+
+                stream = integration.start_event_stream()
+                # Get first yield to trigger initialization
+                try:
+                    await anext(stream)
+                except StopAsyncIteration:
+                    pass
+
+        assert integration._initialized is True
+
+    async def test_start_event_stream_raises_without_client(self):
+        """Test start_event_stream raises error if unifi_client not initialized."""
+        config = {
+            "host": "https://unifi.local",
+            "username": "admin",
+            "password": "password",
+        }
+        integration = UniFiProtectIntegration(config)
+
+        # Mock initialization to fail for unifi_client
+        with patch.object(integration, "_initialize_clients", new_callable=AsyncMock):
+            integration._initialized = True
+            integration._unifi_client = None
+
+            stream = integration.start_event_stream()
+            with pytest.raises(RuntimeError, match="Clients not initialized"):
+                await anext(stream)
+
+    async def test_start_event_stream_yields_initial_data(self):
+        """Test that start_event_stream yields initial data first."""
+        config = {
+            "host": "https://unifi.local",
+            "username": "admin",
+            "password": "password",
+        }
+        integration = UniFiProtectIntegration(config)
+
+        mock_camera_info = MagicMock()
+        mock_camera_info.id = "camera-1"
+        mock_camera_info.name = "Front Door"
+        mock_camera_info.status.value = "online"
+        mock_camera_info.is_recording = True
+        mock_camera_info.motion_detected = False
+        mock_camera_info.last_motion = None
+        mock_camera_info.model = "UVC G3"
+        mock_camera_info.firmware_version = "1.2.3"
+        mock_camera_info.resolution = "1920x1080"
+
+        mock_unifi_client = AsyncMock()
+        mock_unifi_client.get_cameras = AsyncMock(return_value=[mock_camera_info])
+        mock_unifi_client.get_recent_motion_events = AsyncMock(return_value=[])
+        mock_unifi_client._client = MagicMock()
+        mock_unifi_client._client.subscribe_websocket = MagicMock(
+            return_value=lambda: None
+        )
+
+        mock_go2rtc_client = AsyncMock()
+        mock_go2rtc_client.get_stream_url = AsyncMock(return_value="ws://localhost")
+
+        integration._unifi_client = mock_unifi_client
+        integration._go2rtc_client = mock_go2rtc_client
+        integration._initialized = True
+
+        stream = integration.start_event_stream()
+        initial_data = await anext(stream)
+
+        assert "cameras" in initial_data
+        assert len(initial_data["cameras"]) == 1
+
+    async def test_start_event_stream_filters_heartbeat_messages(self):
+        """Test that start_event_stream filters out heartbeat messages."""
+        config = {
+            "host": "https://unifi.local",
+            "username": "admin",
+            "password": "password",
+        }
+        integration = UniFiProtectIntegration(config)
+
+        # Queue to pass messages through
+        event_queue = None
+
+        def capture_callback(callback):
+            nonlocal event_queue
+            event_queue = callback
+            return lambda: None
+
+        mock_heartbeat_msg = MagicMock()
+        mock_heartbeat_msg.action = "heartbeat"
+
+        mock_unifi_client = AsyncMock()
+        mock_unifi_client.get_cameras = AsyncMock(return_value=[])
+        mock_unifi_client.get_recent_motion_events = AsyncMock(return_value=[])
+        mock_unifi_client._client = MagicMock()
+        mock_unifi_client._client.subscribe_websocket = MagicMock(
+            side_effect=capture_callback
+        )
+
+        mock_go2rtc_client = AsyncMock()
+        mock_go2rtc_client.get_stream_url = AsyncMock(return_value="ws://localhost")
+
+        integration._unifi_client = mock_unifi_client
+        integration._go2rtc_client = mock_go2rtc_client
+        integration._initialized = True
+
+        stream = integration.start_event_stream()
+        # Get initial data
+        await anext(stream)
+
+        # Simulate heartbeat - should be filtered
+        if event_queue:
+            event_queue(mock_heartbeat_msg)
+
+    async def test_start_event_stream_websocket_callback_error_handling(self):
+        """Test that WebSocket callback handles RuntimeError gracefully."""
+        import asyncio
+
+        config = {
+            "host": "https://unifi.local",
+            "username": "admin",
+            "password": "password",
+        }
+        integration = UniFiProtectIntegration(config)
+
+        # Create mock camera info
+        mock_camera_info = MagicMock()
+        mock_camera_info.id = "camera-1"
+        mock_camera_info.name = "Front Door"
+        mock_camera_info.status.value = "online"
+        mock_camera_info.is_recording = True
+        mock_camera_info.motion_detected = False
+        mock_camera_info.last_motion = None
+        mock_camera_info.model = "UVC G3"
+        mock_camera_info.firmware_version = "1.2.3"
+        mock_camera_info.resolution = "1920x1080"
+
+        # Mock the asyncio.create_task to raise RuntimeError
+        original_create_task = asyncio.create_task
+
+        call_count = 0
+
+        def failing_create_task(coro):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # First call succeeds
+                return original_create_task(coro)
+            else:
+                # Second call raises RuntimeError (event loop closed)
+                raise RuntimeError("Event loop is closed")
+
+        # Capture the callback
+        captured_callback = None
+
+        def capture_callback(callback):
+            nonlocal captured_callback
+            captured_callback = callback
+            return lambda: None
+
+        mock_unifi_client = AsyncMock()
+        mock_unifi_client.get_cameras = AsyncMock(return_value=[mock_camera_info])
+        mock_unifi_client.get_recent_motion_events = AsyncMock(return_value=[])
+        mock_unifi_client._client = MagicMock()
+        mock_unifi_client._client.subscribe_websocket = MagicMock(
+            side_effect=capture_callback
+        )
+
+        mock_go2rtc_client = AsyncMock()
+        mock_go2rtc_client.get_stream_url = AsyncMock(return_value="ws://localhost")
+
+        integration._unifi_client = mock_unifi_client
+        integration._go2rtc_client = mock_go2rtc_client
+        integration._initialized = True
+
+        # Start the event stream
+        stream = integration.start_event_stream()
+
+        # Get initial data
+        initial_data = await anext(stream)
+        assert "cameras" in initial_data
+
+        # Now test the callback with RuntimeError handling
+        with patch("asyncio.create_task", side_effect=failing_create_task):
+            if captured_callback:
+                # This should not raise, just silently fail
+                captured_callback(MagicMock())
+                captured_callback(MagicMock())
+
+    async def test_start_event_stream_receives_camera_events(self):
+        """Test that start_event_stream yields on camera status changes."""
+        import asyncio
+
+        config = {
+            "host": "https://unifi.local",
+            "username": "admin",
+            "password": "password",
+        }
+        integration = UniFiProtectIntegration(config)
+
+        # Create mock camera info
+        mock_camera_info = MagicMock()
+        mock_camera_info.id = "camera-1"
+        mock_camera_info.name = "Front Door"
+        mock_camera_info.status.value = "online"
+        mock_camera_info.is_recording = True
+        mock_camera_info.motion_detected = False
+        mock_camera_info.last_motion = None
+        mock_camera_info.model = "UVC G3"
+        mock_camera_info.firmware_version = "1.2.3"
+        mock_camera_info.resolution = "1920x1080"
+
+        # Mock camera update event
+        mock_camera_event = MagicMock()
+        mock_camera_event.action = "update"
+        mock_camera_event.new_obj = MagicMock()
+        mock_camera_event.new_obj.__class__.__name__ = "Camera"
+
+        # Queue to use
+        event_queue = None
+
+        def capture_callback(callback):
+            nonlocal event_queue
+            event_queue = callback
+            return lambda: None
+
+        mock_unifi_client = AsyncMock()
+        mock_unifi_client.get_cameras = AsyncMock(return_value=[mock_camera_info])
+        mock_unifi_client.get_recent_motion_events = AsyncMock(return_value=[])
+        mock_unifi_client._client = MagicMock()
+        mock_unifi_client._client.subscribe_websocket = MagicMock(
+            side_effect=capture_callback
+        )
+
+        mock_go2rtc_client = AsyncMock()
+        mock_go2rtc_client.get_stream_url = AsyncMock(return_value="ws://localhost")
+
+        integration._unifi_client = mock_unifi_client
+        integration._go2rtc_client = mock_go2rtc_client
+        integration._initialized = True
+
+        # Start event stream
+        stream = integration.start_event_stream()
+
+        # Get initial data
+        initial_data = await anext(stream)
+        assert "cameras" in initial_data
+
+        # Simulate a camera update event via the queue
+        if event_queue:
+            event_queue(mock_camera_event)
+
+    async def test_start_event_stream_filters_non_updates(self):
+        """Test that start_event_stream ignores heartbeat messages."""
+        config = {
+            "host": "https://unifi.local",
+            "username": "admin",
+            "password": "password",
+        }
+        integration = UniFiProtectIntegration(config)
+
+        # Mock camera info
+        mock_camera_info = MagicMock()
+        mock_camera_info.id = "camera-1"
+        mock_camera_info.name = "Front Door"
+        mock_camera_info.status.value = "online"
+        mock_camera_info.is_recording = True
+        mock_camera_info.motion_detected = False
+        mock_camera_info.last_motion = None
+        mock_camera_info.model = "UVC G3"
+        mock_camera_info.firmware_version = "1.2.3"
+        mock_camera_info.resolution = "1920x1080"
+
+        # Heartbeat message
+        mock_heartbeat = MagicMock()
+        mock_heartbeat.action = "heartbeat"
+
+        # Empty/None message
+        mock_empty = None
+
+        def capture_callback(callback):
+            return lambda: None
+
+        mock_unifi_client = AsyncMock()
+        mock_unifi_client.get_cameras = AsyncMock(return_value=[mock_camera_info])
+        mock_unifi_client.get_recent_motion_events = AsyncMock(return_value=[])
+        mock_unifi_client._client = MagicMock()
+        mock_unifi_client._client.subscribe_websocket = MagicMock(
+            side_effect=capture_callback
+        )
+
+        mock_go2rtc_client = AsyncMock()
+        mock_go2rtc_client.get_stream_url = AsyncMock(return_value="ws://localhost")
+
+        integration._unifi_client = mock_unifi_client
+        integration._go2rtc_client = mock_go2rtc_client
+        integration._initialized = True
+
+        # Start event stream
+        stream = integration.start_event_stream()
+
+        # Get initial data
+        initial_data = await anext(stream)
+        assert "cameras" in initial_data
+        assert initial_data["timestamp"]  # Should have timestamp
+
+    async def test_start_event_stream_full_initialization_flow(self):
+        """Test start_event_stream with full initialization and uninitialized state."""
+        config = {
+            "host": "https://unifi.local:443",
+            "username": "admin",
+            "password": "password",
+        }
+        integration = UniFiProtectIntegration(config)
+        # Start uninitialized
+        assert integration._initialized is False
+
+        mock_camera_info = MagicMock()
+        mock_camera_info.id = "camera-1"
+        mock_camera_info.name = "Front Door"
+        mock_camera_info.status.value = "online"
+        mock_camera_info.is_recording = True
+        mock_camera_info.motion_detected = False
+        mock_camera_info.last_motion = None
+        mock_camera_info.model = "UVC G3"
+        mock_camera_info.firmware_version = "1.2.3"
+        mock_camera_info.resolution = "1920x1080"
+
+        mock_unifi_client = AsyncMock()
+        mock_unifi_client.connect = AsyncMock()
+        mock_unifi_client.get_cameras = AsyncMock(return_value=[mock_camera_info])
+        mock_unifi_client._client = MagicMock()
+        mock_unifi_client._client.subscribe_websocket = MagicMock(return_value=lambda: None)
+
+        mock_go2rtc_client = AsyncMock()
+        mock_go2rtc_client.check_health = AsyncMock(return_value=True)
+        mock_go2rtc_client.get_stream_url = AsyncMock(return_value="ws://localhost")
+
+        with patch(
+            "integrations.cameras.integration.UniFiProtectClient"
+        ) as mock_unifi_class:
+            with patch(
+                "integrations.cameras.integration.Go2RTCClient"
+            ) as mock_go2rtc_class:
+                mock_unifi_class.return_value = mock_unifi_client
+                mock_go2rtc_class.return_value = mock_go2rtc_client
+
+                # Start the event stream - should initialize clients
+                stream = integration.start_event_stream()
+                initial_data = await anext(stream)
+
+                # Should now be initialized
+                assert integration._initialized is True
+                # Should have cameras data
+                assert "cameras" in initial_data

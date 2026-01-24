@@ -347,3 +347,240 @@ class TestExampleIntegration:
         assert data["message"] == "Custom Message"
         assert "stats" in data
         assert len(data["stats"]) == 3
+
+
+class TestBaseIntegrationErrorHandling:
+    """Tests for error handling in BaseIntegration."""
+
+    def test_config_property_raises_if_not_validated(self):
+        """Test that config property raises if _validated_config is None."""
+
+        class BrokenIntegration(BaseIntegration):
+            name = "broken"
+            display_name = "Broken"
+            ConfigModel = None
+
+            async def fetch_data(self):
+                return {}
+
+        integration = BrokenIntegration.__new__(BrokenIntegration)
+        integration._validated_config = None
+        integration.name = "broken"
+
+        with pytest.raises(RuntimeError, match="config not validated"):
+            _ = integration.config
+
+    def test_validate_config_without_model(self):
+        """Test that validate_config raises if ConfigModel is None."""
+
+        class NoModelIntegration(BaseIntegration):
+            name = "no_model"
+            display_name = "No Model"
+            ConfigModel = None
+
+            async def fetch_data(self):
+                return {}
+
+        with pytest.raises(ValueError, match="must define ConfigModel"):
+            NoModelIntegration({})
+
+    def test_get_config_value_with_unvalidated_config(self):
+        """Test that get_config_value raises if config not validated."""
+
+        class ConfigIntegration(BaseIntegration):
+            name = "config_test"
+            display_name = "Config Test"
+            ConfigModel = None
+
+            async def fetch_data(self):
+                return {}
+
+        integration = ConfigIntegration.__new__(ConfigIntegration)
+        integration._validated_config = None
+        integration.name = "config_test"
+
+        with pytest.raises(RuntimeError, match="config not validated"):
+            integration.get_config_value("key")
+
+    def test_safe_config_with_pydantic_secret_fields(self):
+        """Test that _get_safe_config filters Pydantic secret fields correctly."""
+
+        class FullSecretConfig(IntegrationConfig):
+            url: str = Field(default="https://example.com")
+            api_key: str = Field(
+                default="secret", json_schema_extra={"secret": True}
+            )
+            token: str = Field(default="token123", json_schema_extra={"secret": True})
+            webhook_url: str = Field(default="https://webhook.example.com")
+
+        class SecretFilterIntegration(BaseIntegration):
+            name = "secret_filter"
+            display_name = "Secret Filter"
+            ConfigModel = FullSecretConfig
+
+            async def fetch_data(self):
+                return {}
+
+        integration = SecretFilterIntegration(
+            {
+                "url": "https://api.example.com",
+                "api_key": "my-secret",
+                "token": "my-token",
+                "webhook_url": "https://my-webhook.com",
+            }
+        )
+        safe_config = integration._get_safe_config()
+
+        # Secret fields marked in Pydantic should be filtered
+        assert "api_key" not in safe_config
+        assert "token" not in safe_config
+
+        # Public fields should remain
+        assert safe_config["url"] == "https://api.example.com"
+        assert safe_config["webhook_url"] == "https://my-webhook.com"
+
+    def test_safe_config_mixed_secret_detection(self):
+        """Test that _get_safe_config filters both Pydantic secrets and key patterns."""
+
+        class MixedConfig(IntegrationConfig):
+            url: str = Field(default="https://example.com")
+            my_password: str = Field(default="pass123")
+            api_secret: str = Field(default="secret456")
+
+        class MixedIntegration(BaseIntegration):
+            name = "mixed"
+            display_name = "Mixed"
+            ConfigModel = MixedConfig
+
+            async def fetch_data(self):
+                return {}
+
+        integration = MixedIntegration(
+            {
+                "url": "https://api.example.com",
+                "my_password": "secure123",
+                "api_secret": "secret789",
+            }
+        )
+        safe_config = integration._get_safe_config()
+
+        # Should filter keys containing sensitive patterns
+        assert "my_password" not in safe_config
+        assert "api_secret" not in safe_config
+        # URL is safe
+        assert safe_config["url"] == "https://api.example.com"
+
+    def test_template_env_cached(self):
+        """Test that _get_template_env caches the environment."""
+        config = {"url": "https://example.com"}
+        integration = MockIntegration(config)
+
+        # First call creates the environment
+        env1 = integration._get_template_env()
+        # Second call should return the cached environment
+        env2 = integration._get_template_env()
+
+        # Should be the same object (cached)
+        assert env1 is env2
+
+    def test_get_safe_config_with_no_pydantic_model(self):
+        """Test _get_safe_config when ConfigModel is None."""
+
+        class NoConfigModel(IntegrationConfig):
+            pass
+
+        class NoModelIntegration(BaseIntegration):
+            name = "no_model"
+            display_name = "No Model"
+            ConfigModel = None
+
+            async def fetch_data(self):
+                return {}
+
+        # This should raise during init since ConfigModel is required
+        with pytest.raises(ValueError, match="must define ConfigModel"):
+            NoModelIntegration({})
+
+    def test_safe_config_empty_secret_fields(self):
+        """Test _get_safe_config when Pydantic model has no secret fields."""
+
+        class NoSecretsConfig(IntegrationConfig):
+            service_url: str = Field(default="https://example.com")
+            display_name: str = Field(default="My Service")
+
+        class NoSecretsIntegration(BaseIntegration):
+            name = "no_secrets"
+            display_name = "No Secrets"
+            ConfigModel = NoSecretsConfig
+
+            async def fetch_data(self):
+                return {}
+
+        integration = NoSecretsIntegration(
+            {"service_url": "https://api.example.com", "display_name": "My API"}
+        )
+        safe_config = integration._get_safe_config()
+
+        # All fields should be present since none are marked as secret
+        assert safe_config["service_url"] == "https://api.example.com"
+        assert safe_config["display_name"] == "My API"
+
+    def test_safe_config_with_non_dict_json_schema_extra(self):
+        """Test _get_safe_config with json_schema_extra that's not a dict."""
+
+        class MixedExtraConfig(IntegrationConfig):
+            field1: str = Field(default="value1", json_schema_extra="string")
+            field2: str = Field(default="value2", json_schema_extra=123)
+            field3: str = Field(default="value3")
+
+        class MixedExtraIntegration(BaseIntegration):
+            name = "mixed_extra"
+            display_name = "Mixed Extra"
+            ConfigModel = MixedExtraConfig
+
+            async def fetch_data(self):
+                return {}
+
+        integration = MixedExtraIntegration(
+            {
+                "field1": "val1",
+                "field2": "val2",
+                "field3": "val3",
+            }
+        )
+        safe_config = integration._get_safe_config()
+
+        # All should be present since json_schema_extra is not dict with secret: True
+        assert safe_config["field1"] == "val1"
+        assert safe_config["field2"] == "val2"
+        assert safe_config["field3"] == "val3"
+
+    def test_safe_config_with_empty_secret_dict(self):
+        """Test _get_safe_config with json_schema_extra dict but no secret key."""
+
+        class EmptySecretDictConfig(IntegrationConfig):
+            field1: str = Field(default="value1", json_schema_extra={"other": True})
+            field2: str = Field(default="value2", json_schema_extra={"secret": False})
+            field3: str = Field(default="value3")
+
+        class EmptySecretDictIntegration(BaseIntegration):
+            name = "empty_secret_dict"
+            display_name = "Empty Secret Dict"
+            ConfigModel = EmptySecretDictConfig
+
+            async def fetch_data(self):
+                return {}
+
+        integration = EmptySecretDictIntegration(
+            {
+                "field1": "val1",
+                "field2": "val2",
+                "field3": "val3",
+            }
+        )
+        safe_config = integration._get_safe_config()
+
+        # All should be present since secret: True is not set in any field
+        assert safe_config["field1"] == "val1"
+        assert safe_config["field2"] == "val2"
+        assert safe_config["field3"] == "val3"

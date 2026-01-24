@@ -333,3 +333,171 @@ class TestWebSocketHandling:
             websocket.send_text("ping")
             response = websocket.receive_text()
             assert response == "pong"
+
+
+class TestRefreshWidgetPollingMode:
+    """Tests for polling mode in refresh_widget."""
+
+    @pytest.mark.asyncio
+    async def test_broadcast_widget_update(self, monkeypatch):
+        """Test that broadcast_widget_update handles WebSocket clients."""
+        import asyncio
+        import json
+        from server.main import broadcast_widget_update, active_connections
+        from unittest.mock import AsyncMock, MagicMock
+
+        # Create mock WebSocket connections
+        mock_ws1 = AsyncMock()
+        mock_ws2 = AsyncMock()
+
+        # Clear and add mocks
+        active_connections.clear()
+        active_connections.add(mock_ws1)
+        active_connections.add(mock_ws2)
+
+        # Broadcast a message
+        await broadcast_widget_update("test_widget", "<div>test</div>")
+
+        # Both should receive the message
+        mock_ws1.send_text.assert_called_once()
+        mock_ws2.send_text.assert_called_once()
+
+        # Verify message format
+        call_args = mock_ws1.send_text.call_args
+        message = json.loads(call_args[0][0])
+        assert message["type"] == "widget_update"
+        assert message["integration"] == "test_widget"
+        assert message["html"] == "<div>test</div>"
+
+        # Clean up
+        active_connections.clear()
+
+    @pytest.mark.asyncio
+    async def test_broadcast_widget_update_removes_disconnected(self, monkeypatch):
+        """Test that broadcast removes disconnected WebSocket clients."""
+        import asyncio
+        from server.main import broadcast_widget_update, active_connections
+        from unittest.mock import AsyncMock
+
+        # Create mock WebSocket - one will fail
+        mock_ws_good = AsyncMock()
+        mock_ws_bad = AsyncMock()
+        mock_ws_bad.send_text.side_effect = Exception("Connection closed")
+
+        # Add to active connections
+        active_connections.clear()
+        active_connections.add(mock_ws_good)
+        active_connections.add(mock_ws_bad)
+
+        # Broadcast a message
+        await broadcast_widget_update("test_widget", "<div>test</div>")
+
+        # Good connection should still be there
+        assert mock_ws_good in active_connections
+        # Bad connection should be removed
+        assert mock_ws_bad not in active_connections
+
+        # Clean up
+        active_connections.clear()
+
+    @pytest.mark.asyncio
+    async def test_refresh_widget_with_event_stream(self, monkeypatch):
+        """Test refresh_widget processes event stream successfully."""
+        import asyncio
+        from server.main import refresh_widget, broadcast_widget_update
+        from integrations.base import BaseIntegration, IntegrationConfig
+        from typing import AsyncIterator, Any
+        from unittest.mock import AsyncMock
+
+        class TestConfig(IntegrationConfig):
+            pass
+
+        class TestIntegration(BaseIntegration):
+            name = "event_test"
+            display_name = "Event Test"
+            ConfigModel = TestConfig
+
+            async def fetch_data(self) -> dict[str, Any]:
+                return {"test": "data"}
+
+            async def start_event_stream(self) -> AsyncIterator[dict[str, Any]]:
+                yield {"data": 1}
+                yield {"data": 2}
+                # End stream after 2 yields
+                return
+
+        integration = TestIntegration({})
+
+        # Mock render_widget to avoid template loading
+        monkeypatch.setattr(
+            integration, "render_widget", lambda data: "<div>rendered</div>"
+        )
+
+        broadcast_calls = []
+
+        async def mock_broadcast(name, html):
+            broadcast_calls.append(name)
+
+        monkeypatch.setattr("server.main.broadcast_widget_update", mock_broadcast)
+
+        # Run refresh_widget - should process the event stream
+        try:
+            await asyncio.wait_for(refresh_widget(integration), timeout=1)
+        except asyncio.TimeoutError:
+            pass
+
+        # Should have broadcast the initial data and 2 events
+        assert len(broadcast_calls) >= 2
+
+    @pytest.mark.asyncio
+    async def test_refresh_widget_polling_mode(self, monkeypatch):
+        """Test refresh_widget falls back to polling mode when event stream raises TypeError."""
+        import asyncio
+        from server.main import refresh_widget
+        from integrations.base import BaseIntegration, IntegrationConfig
+        from typing import Any
+
+        class TestConfig(IntegrationConfig):
+            pass
+
+        class PollingIntegration(BaseIntegration):
+            name = "polling_test"
+            display_name = "Polling Test"
+            refresh_interval = 0.01  # Very short interval for testing
+            ConfigModel = TestConfig
+
+            async def fetch_data(self) -> dict[str, Any]:
+                return {"data": "test"}
+
+            def start_event_stream(self):
+                # Not an async generator - will raise TypeError when used
+                return {"not": "async"}
+
+        integration = PollingIntegration({})
+
+        # Mock render_widget to avoid template loading
+        monkeypatch.setattr(
+            integration, "render_widget", lambda data: "<div>rendered</div>"
+        )
+
+        broadcast_calls = []
+        call_count = 0
+
+        async def mock_broadcast(name, html):
+            nonlocal call_count
+            call_count += 1
+            broadcast_calls.append(name)
+            # Stop after 2 calls to avoid infinite loop
+            if call_count >= 2:
+                raise asyncio.CancelledError()
+
+        monkeypatch.setattr("server.main.broadcast_widget_update", mock_broadcast)
+
+        # Run refresh_widget - should use polling mode
+        try:
+            await asyncio.wait_for(refresh_widget(integration), timeout=2)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            pass
+
+        # Should have broadcast at least twice (in polling mode)
+        assert len(broadcast_calls) >= 2
