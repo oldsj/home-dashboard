@@ -3,7 +3,7 @@
 
 dashboard:
   title: Home Dashboard
-  theme: pink # Available: industrial, pink, neon, matrix
+  theme: industrial # Available: industrial, pink, neon, matrix
   refresh_interval: 30 # global default in seconds
   resolution: 1920x1080
 
