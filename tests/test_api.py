@@ -71,6 +71,31 @@ class TestWidgetEndpoint:
         assert "Exception" not in response.text
 
 
+class TestHealthEndpoint:
+    """Tests for the health check endpoint."""
+
+    def test_health_returns_status(self, client: TestClient):
+        """Test health endpoint returns status."""
+        response = client.get("/health")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "status" in data
+
+    def test_health_response_structure(self, client: TestClient):
+        """Test health endpoint has expected response structure."""
+        response = client.get("/health")
+
+        data = response.json()
+        assert data["status"] in ("healthy", "unhealthy")
+        # Healthy responses include integration count
+        if data["status"] == "healthy":
+            assert "integrations" in data
+        # Unhealthy responses include errors
+        else:
+            assert "errors" in data
+
+
 class TestWebSocket:
     """Tests for WebSocket endpoint."""
 

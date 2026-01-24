@@ -42,10 +42,13 @@ services:
       - 8555:8555/tcp # WebRTC
       - 8555:8555/udp # WebRTC
     volumes:
-      - ./config/go2rtc.yaml:/config/go2rtc.yaml
+      - go2rtc-config:/config
     networks:
       - dashboard-network
     restart: unless-stopped
+
+volumes:
+  go2rtc-config:
 
 networks:
   dashboard-network:

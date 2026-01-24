@@ -84,6 +84,10 @@ body %}
           // Use Idiomorph to intelligently morph DOM, preserving video elements
           Idiomorph.morph(widget, data.html, { morphStyle: "innerHTML" });
         }
+      } else if (data.type === "refresh") {
+        // Server deployed new version - reload page
+        console.log("Server triggered refresh, reloading...");
+        location.reload();
       }
     } catch (e) {
       // Ignore non-JSON messages (like pong)

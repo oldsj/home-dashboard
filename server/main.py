@@ -317,6 +317,61 @@ async def list_integrations() -> dict[str, dict[str, Any]]:
     }
 
 
+@app.post("/api/trigger-refresh")
+async def trigger_refresh() -> dict[str, str]:
+    """Trigger all connected browsers to refresh."""
+    message = json.dumps({"type": "refresh"})
+    disconnected = set()
+    count = 0
+
+    for ws in active_connections:
+        try:
+            await ws.send_text(message)
+            count += 1
+        except Exception:
+            disconnected.add(ws)
+
+    active_connections.difference_update(disconnected)
+    return {"status": "ok", "clients_notified": str(count)}
+
+
+@app.get("/health")
+async def health() -> dict[str, Any]:
+    """Health check endpoint for deploy validation."""
+    errors = []
+
+    # Check background tasks are running
+    dead_tasks = [t for t in background_tasks if t.done()]
+    if dead_tasks:
+        for task in dead_tasks:
+            if task.exception():
+                errors.append(f"Background task crashed: {task.exception()}")
+
+    # Check template renders
+    try:
+        template_env.get_template("dashboard.html")
+    except Exception as e:
+        errors.append(f"Template error: {e}")
+
+    # Check each integration can fetch data
+    for name, integration in loaded_integrations.items():
+        try:
+            await asyncio.wait_for(integration.fetch_data(), timeout=5.0)
+        except asyncio.TimeoutError:
+            errors.append(f"Integration '{name}' timed out")
+        except Exception as e:
+            errors.append(f"Integration '{name}' failed: {e}")
+
+    if errors:
+        return {"status": "unhealthy", "errors": errors}
+
+    return {
+        "status": "healthy",
+        "integrations": len(loaded_integrations),
+        "websocket_clients": len(active_connections),
+    }
+
+
 @app.get("/api/debug/config")
 async def debug_config() -> dict[str, Any]:
     """Debug endpoint to view current configuration and theme."""
