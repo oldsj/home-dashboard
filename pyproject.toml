@@ -15,6 +15,7 @@ dependencies = [
   "dashboard-integration-base",
   "example-integration",
   "cameras-integration",
+  "todoist-api-python>=3.2.1",
 ]
 
 [project.optional-dependencies]
