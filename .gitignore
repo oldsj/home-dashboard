@@ -15,6 +15,7 @@ env/
 
 # Testing
 .coverage
+coverage.json
 coverage.xml
 htmlcov/
 

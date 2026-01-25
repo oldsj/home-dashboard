@@ -71,11 +71,27 @@ class TodoistIntegration(BaseIntegration):
             max_tasks = self.get_config_value("max_tasks", 10)
 
             # Fetch all active tasks
-            all_tasks = await api.get_tasks()
+            # get_tasks() returns AsyncGenerator[list[Task]] from real API,
+            # but may return a list from mocks in tests
+            all_tasks = []
+            tasks_result = await api.get_tasks()
+            if isinstance(tasks_result, list):
+                all_tasks = tasks_result
+            else:
+                async for task_batch in tasks_result:
+                    all_tasks.extend(task_batch)
 
             # Fetch all projects to get project names
-            projects_list = await api.get_projects()
-            project_map = {p.id: p.name for p in projects_list}
+            # get_projects() returns AsyncGenerator[list[Project]] from real API,
+            # but may return a list from mocks in tests
+            projects = []
+            projects_result = await api.get_projects()
+            if isinstance(projects_result, list):
+                projects = projects_result
+            else:
+                async for project_batch in projects_result:
+                    projects.extend(project_batch)
+            project_map = {p.id: p.name for p in projects}
 
             # Categorize tasks
             today = datetime.now().date()
@@ -140,7 +156,7 @@ class TodoistIntegration(BaseIntegration):
                 "upcoming_count": len(upcoming_tasks),
                 "completed_today": completed_today,
                 "total_tasks": len(all_tasks),
-                "projects_count": len(projects_list),
+                "projects_count": len(projects),
                 "timestamp": datetime.now().isoformat(),
                 "max_tasks": max_tasks,
             }

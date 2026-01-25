@@ -43,6 +43,8 @@ services:
       - 8555:8555/udp # WebRTC
     volumes:
       - go2rtc-config:/config
+    environment:
+      - GO2RTC_API_ORIGIN=*
     networks:
       - dashboard-network
     restart: unless-stopped

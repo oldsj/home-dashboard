@@ -456,3 +456,31 @@ class TestTodoistIntegration:
         # Task should be categorized as today
         assert len(data["today_tasks"]) == 1
         assert data["today_tasks"][0]["content"] == "Task with datetime due"
+
+    async def test_fetch_data_with_async_generators(self, monkeypatch):
+        """Test fetch_data handles async generators from real API."""
+        config = {"api_token": "test-token-123"}
+        integration = TodoistIntegration(config)
+
+        today_str = datetime.now().date().isoformat()
+
+        # Create async generator functions to simulate real API behavior
+        async def tasks_async_gen():
+            yield [create_mock_task("1", "Task 1", today_str)]
+
+        async def projects_async_gen():
+            yield [create_mock_project("proj1", "Project 1")]
+
+        # Mock the API client with async generators
+        mock_api = AsyncMock()
+        mock_api.get_tasks = AsyncMock(return_value=tasks_async_gen())
+        mock_api.get_projects = AsyncMock(return_value=projects_async_gen())
+
+        monkeypatch.setattr(integration, "_get_api", lambda: mock_api)
+
+        data = await integration.fetch_data()
+
+        # Verify async generator path works correctly
+        assert len(data["today_tasks"]) == 1
+        assert data["today_tasks"][0]["content"] == "Task 1"
+        assert data["projects_count"] == 1
