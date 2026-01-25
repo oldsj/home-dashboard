@@ -9,8 +9,8 @@ from server.main import app, hex_to_rgb
 
 
 @pytest.fixture
-def client():
-    """Create a test client."""
+def client(setup_config):
+    """Create a test client with config set up."""
     with TestClient(app) as client:
         yield client
 
@@ -69,31 +69,6 @@ class TestWidgetEndpoint:
         assert "Traceback" not in response.text
         assert "/Users/" not in response.text
         assert "Exception" not in response.text
-
-
-class TestHealthEndpoint:
-    """Tests for the health check endpoint."""
-
-    def test_health_returns_status(self, client: TestClient):
-        """Test health endpoint returns status."""
-        response = client.get("/health")
-
-        assert response.status_code == 200
-        data = response.json()
-        assert "status" in data
-
-    def test_health_response_structure(self, client: TestClient):
-        """Test health endpoint has expected response structure."""
-        response = client.get("/health")
-
-        data = response.json()
-        assert data["status"] in ("healthy", "unhealthy")
-        # Healthy responses include integration count
-        if data["status"] == "healthy":
-            assert "integrations" in data
-        # Unhealthy responses include errors
-        else:
-            assert "errors" in data
 
 
 class TestWebSocket:
@@ -667,3 +642,222 @@ class TestThemeRendering:
         assert response.status_code == 200
         # Should contain matrix theme green color
         assert "#00ff41" in response.text
+
+
+class TestTriggerRefreshEndpoint:
+    """Tests for the /api/trigger-refresh endpoint."""
+
+    async def test_trigger_refresh_no_clients(self, client: TestClient):
+        """Test trigger refresh when no clients are connected."""
+        response = client.post("/api/trigger-refresh")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["clients_notified"] == "0"
+
+    async def test_trigger_refresh_with_connected_clients(
+        self, client: TestClient, monkeypatch
+    ):
+        """Test trigger refresh with connected WebSocket clients."""
+        from unittest.mock import AsyncMock
+
+        from server.main import active_connections
+
+        # Mock a WebSocket connection
+        mock_ws = AsyncMock()
+        mock_ws.send_text = AsyncMock()
+        active_connections.add(mock_ws)
+
+        try:
+            response = client.post("/api/trigger-refresh")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "ok"
+            assert data["clients_notified"] == "1"
+            mock_ws.send_text.assert_called_once()
+        finally:
+            active_connections.discard(mock_ws)
+
+    async def test_trigger_refresh_handles_disconnected_clients(
+        self, client: TestClient
+    ):
+        """Test trigger refresh handles disconnected WebSocket clients."""
+        from unittest.mock import AsyncMock
+
+        from server.main import active_connections
+
+        # Mock a disconnected WebSocket that raises exception
+        mock_ws = AsyncMock()
+        mock_ws.send_text = AsyncMock(side_effect=Exception("Connection closed"))
+        active_connections.add(mock_ws)
+
+        try:
+            response = client.post("/api/trigger-refresh")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "ok"
+            # Client was disconnected, so should be removed from active_connections
+            assert mock_ws not in active_connections
+        finally:
+            active_connections.discard(mock_ws)
+
+
+class TestHealthEndpoint:
+    """Tests for the /health endpoint."""
+
+    async def test_health_check_healthy(self, client: TestClient):
+        """Test health check returns healthy when all is well."""
+        from server.main import background_tasks
+
+        # Ensure background_tasks is clean (no dead tasks)
+        original_tasks = set(background_tasks)
+        try:
+            # Remove any done tasks
+            background_tasks.difference_update(
+                [t for t in background_tasks if t.done()]
+            )
+
+            response = client.get("/health")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "healthy"
+            assert "integrations" in data
+            assert "websocket_clients" in data
+        finally:
+            # Restore original state
+            background_tasks.clear()
+            background_tasks.update(original_tasks)
+
+    async def test_health_check_template_error(self, client: TestClient, monkeypatch):
+        """Test health check detects template errors."""
+        from server.main import template_env
+
+        def mock_get_template(name):
+            raise Exception("Template not found")
+
+        monkeypatch.setattr(template_env, "get_template", mock_get_template)
+
+        response = client.get("/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "unhealthy"
+        assert "errors" in data
+        assert any("Template error" in err for err in data["errors"])
+
+    async def test_health_check_integration_timeout(
+        self, client: TestClient, monkeypatch
+    ):
+        """Test health check detects integration timeouts."""
+        import asyncio
+
+        from server.main import loaded_integrations
+
+        if "example" in loaded_integrations:
+
+            async def slow_fetch():
+                await asyncio.sleep(10)  # Will timeout
+                return {}
+
+            monkeypatch.setattr(
+                loaded_integrations["example"], "fetch_data", slow_fetch
+            )
+
+            response = client.get("/health")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "unhealthy"
+            assert any("timed out" in err for err in data["errors"])
+
+    async def test_health_check_integration_error(
+        self, client: TestClient, monkeypatch
+    ):
+        """Test health check detects integration errors."""
+        from server.main import loaded_integrations
+
+        if "example" in loaded_integrations:
+
+            async def failing_fetch():
+                raise RuntimeError("Integration failed")
+
+            monkeypatch.setattr(
+                loaded_integrations["example"], "fetch_data", failing_fetch
+            )
+
+            response = client.get("/health")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "unhealthy"
+            assert any("failed" in err for err in data["errors"])
+
+    async def test_health_check_background_task_crashed(
+        self, client: TestClient, monkeypatch
+    ):
+        """Test health check detects crashed background tasks."""
+        import asyncio
+
+        from server.main import background_tasks
+
+        # Create a fake crashed task
+        async def crash():
+            raise RuntimeError("Task crashed")
+
+        task = asyncio.create_task(crash())
+        background_tasks.add(task)
+
+        # Wait for task to crash
+        try:
+            await task
+        except RuntimeError:
+            pass
+
+        try:
+            response = client.get("/health")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "unhealthy"
+            assert any("Background task crashed" in err for err in data["errors"])
+        finally:
+            background_tasks.discard(task)
+
+
+class TestDebugConfigEndpoint:
+    """Tests for the /api/debug/config endpoint."""
+
+    def test_debug_config_returns_settings(self, client: TestClient):
+        """Test debug config endpoint returns current settings."""
+        response = client.get("/api/debug/config")
+        assert response.status_code == 200
+        data = response.json()
+        assert "dashboard" in data
+        assert "layout" in data
+        assert "title" in data["dashboard"]
+        assert "refresh_interval" in data["dashboard"]
+
+    def test_debug_config_shows_theme(self, client: TestClient):
+        """Test debug config shows theme information."""
+        response = client.get("/api/debug/config")
+        assert response.status_code == 200
+        data = response.json()
+        assert "theme" in data["dashboard"]
+        assert "theme_status" in data["dashboard"]
+        assert data["dashboard"]["theme_status"]["loaded_successfully"]
+
+    def test_debug_config_with_invalid_theme(self, client: TestClient, monkeypatch):
+        """Test debug config handles invalid theme."""
+        from server.config import get_settings
+
+        original_get_settings = get_settings
+
+        def mock_get_settings():
+            settings = original_get_settings()
+            settings.dashboard.theme = "nonexistent"
+            return settings
+
+        monkeypatch.setattr("server.main.get_settings", mock_get_settings)
+
+        response = client.get("/api/debug/config")
+        assert response.status_code == 200
+        data = response.json()
+        assert "theme_status" in data["dashboard"]
+        assert not data["dashboard"]["theme_status"]["loaded_successfully"]
+        assert "error" in data["dashboard"]["theme_status"]

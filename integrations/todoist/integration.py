@@ -70,15 +70,11 @@ class TodoistIntegration(BaseIntegration):
             api = self._get_api()
             max_tasks = self.get_config_value("max_tasks", 10)
 
-            # Fetch all active tasks (async generator returns pages)
-            all_tasks = []
-            async for tasks_page in await api.get_tasks():
-                all_tasks.extend(tasks_page)
+            # Fetch all active tasks
+            all_tasks = await api.get_tasks()
 
-            # Fetch all projects to get project names (async generator returns pages)
-            projects_list = []
-            async for projects_page in await api.get_projects():
-                projects_list.extend(projects_page)
+            # Fetch all projects to get project names
+            projects_list = await api.get_projects()
             project_map = {p.id: p.name for p in projects_list}
 
             # Categorize tasks

@@ -155,7 +155,11 @@ class UniFiProtectIntegration(BaseIntegration):
 
             registered = 0
             for camera_info in cameras:
-                rtsp_url = await self._unifi_client.get_camera_rtsp_url(camera_info.id)
+                # Use low quality (720p H.264) for Pi compatibility
+                # Pi only supports H.264 up to 1920x1920, no H.265/HEVC
+                rtsp_url = await self._unifi_client.get_camera_rtsp_url(
+                    camera_info.id, quality="low"
+                )
                 if rtsp_url:
                     # Use camera name as stream identifier (sanitized)
                     stream_name = camera_info.name.lower().replace(" ", "_")
@@ -168,6 +172,18 @@ class UniFiProtectIntegration(BaseIntegration):
                 logger.info(
                     f"Successfully registered {registered}/{len(cameras)} camera streams"
                 )
+                # Restart go2rtc to apply the new stream configuration
+                logger.info("Restarting go2rtc to apply stream configuration...")
+                if await self._go2rtc_client.restart():
+                    # Wait for go2rtc to come back up
+                    await asyncio.sleep(2)
+                    for _i in range(5):
+                        if await self._go2rtc_client.check_health():
+                            logger.info("go2rtc restarted successfully")
+                            break
+                        await asyncio.sleep(1)
+                else:
+                    logger.warning("Failed to restart go2rtc")
             else:
                 logger.info(
                     "No streams registered with go2rtc (will use direct RTSP proxying)"
@@ -199,11 +215,10 @@ class UniFiProtectIntegration(BaseIntegration):
             # Add stream URLs for each camera
             cameras_data = []
             for camera_info in cameras:
-                # Stream name must match go2rtc.yaml config (lowercase, underscores)
+                # Stream name matches what was registered with go2rtc
                 stream_name = camera_info.name.lower().replace(" ", "_")
 
-                # Generate stream URLs using pre-registered stream names from go2rtc.yaml
-                # (don't pass RTSP URL - use the configured stream names directly)
+                # Generate stream URLs using pre-registered stream names
                 webrtc_url = await self._go2rtc_client.get_stream_url(
                     stream_name, StreamType.WEBRTC
                 )

@@ -58,10 +58,15 @@ def create_mock_task(
     task.project_id = project_id
 
     if due_date:
+        from datetime import datetime
+
         task.due = MagicMock()
-        task.due.date = due_date
+        # Parse the string to a date object to match real API behavior
+        task.due.date = datetime.fromisoformat(due_date).date()
         task.due.datetime = None
         task.due.string = due_date
+        task.due.is_recurring = False
+        task.due.timezone = None
     else:
         task.due = None
 
@@ -415,3 +420,39 @@ class TestTodoistIntegration:
         assert len(data["today_tasks"]) == 0
         assert len(data["overdue_tasks"]) == 0
         assert data["upcoming_count"] == 1
+
+    async def test_fetch_data_with_datetime_due_date(self, monkeypatch):
+        """Test task with datetime object as due date (instead of date object)."""
+        config = {"api_token": "test-token-123"}
+        integration = TodoistIntegration(config)
+
+        today_str = datetime.now().date().isoformat()
+
+        # Create a task with datetime as due date
+        task = MagicMock()
+        task.id = "1"
+        task.content = "Task with datetime due"
+        task.description = ""
+        task.priority = 1
+        task.labels = []
+        task.project_id = "proj1"
+        task.due = MagicMock()
+        # Use datetime object instead of date object
+        task.due.date = datetime.now()  # datetime, not date
+        task.due.datetime = datetime.now()
+        task.due.string = today_str
+        task.due.is_recurring = False
+        task.due.timezone = None
+
+        # Mock the API client
+        mock_api = AsyncMock()
+        mock_api.get_tasks.return_value = [task]
+        mock_api.get_projects.return_value = [create_mock_project("proj1", "Inbox")]
+
+        monkeypatch.setattr(integration, "_get_api", lambda: mock_api)
+
+        data = await integration.fetch_data()
+
+        # Task should be categorized as today
+        assert len(data["today_tasks"]) == 1
+        assert data["today_tasks"][0]["content"] == "Task with datetime due"

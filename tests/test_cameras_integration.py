@@ -247,6 +247,43 @@ class TestGo2RTCClient:
 
             assert result == {}
 
+    async def test_restart_success(self):
+        """Test successful go2rtc restart."""
+        client = Go2RTCClient("http://go2rtc:1984")
+
+        with patch.object(client.client, "post", new_callable=AsyncMock) as mock_post:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_post.return_value = mock_response
+
+            result = await client.restart()
+
+            assert result is True
+            mock_post.assert_called_once_with("http://go2rtc:1984/api/restart")
+
+    async def test_restart_remote_protocol_error(self):
+        """Test restart with remote protocol error (expected during restart)."""
+        client = Go2RTCClient("http://go2rtc:1984")
+
+        with patch.object(client.client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.side_effect = httpx.RemoteProtocolError("Connection closed")
+
+            result = await client.restart()
+
+            # RemoteProtocolError is expected when go2rtc restarts
+            assert result is True
+
+    async def test_restart_http_error(self):
+        """Test restart with HTTP error."""
+        client = Go2RTCClient("http://go2rtc:1984")
+
+        with patch.object(client.client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.side_effect = httpx.ConnectError("Connection failed")
+
+            result = await client.restart()
+
+            assert result is False
+
 
 class TestUniFiProtectClient:
     """Tests for UniFiProtectClient."""
@@ -483,6 +520,120 @@ class TestUniFiProtectClient:
 
         with pytest.raises(RuntimeError, match="Client not connected"):
             await client.get_camera_rtsp_url("camera-1")
+
+    async def test_get_camera_rtsp_url_high_quality(self):
+        """Test getting RTSP URL with high quality (channel 0)."""
+        client = UniFiProtectClient(
+            host="unifi.local", port=443, username="admin", password="password"
+        )
+
+        # Create three channels (high, medium, low)
+        mock_channels = [
+            MagicMock(rtsp_url="rtsp://camera.local/0", width=3840, height=2160),
+            MagicMock(rtsp_url="rtsp://camera.local/1", width=1920, height=1080),
+            MagicMock(rtsp_url="rtsp://camera.local/2", width=1280, height=720),
+        ]
+
+        mock_camera = MagicMock()
+        mock_camera.channels = mock_channels
+
+        mock_api_client = MagicMock()
+        mock_api_client.bootstrap.cameras.get.return_value = mock_camera
+        client._client = mock_api_client
+
+        rtsp_url = await client.get_camera_rtsp_url("camera-1", quality="high")
+
+        assert rtsp_url == "rtsp://camera.local/0"
+
+    async def test_get_camera_rtsp_url_medium_quality(self):
+        """Test getting RTSP URL with medium quality (channel 1)."""
+        client = UniFiProtectClient(
+            host="unifi.local", port=443, username="admin", password="password"
+        )
+
+        # Create three channels
+        mock_channels = [
+            MagicMock(rtsp_url="rtsp://camera.local/0", width=3840, height=2160),
+            MagicMock(rtsp_url="rtsp://camera.local/1", width=1920, height=1080),
+            MagicMock(rtsp_url="rtsp://camera.local/2", width=1280, height=720),
+        ]
+
+        mock_camera = MagicMock()
+        mock_camera.channels = mock_channels
+
+        mock_api_client = MagicMock()
+        mock_api_client.bootstrap.cameras.get.return_value = mock_camera
+        client._client = mock_api_client
+
+        rtsp_url = await client.get_camera_rtsp_url("camera-1", quality="medium")
+
+        assert rtsp_url == "rtsp://camera.local/1"
+
+    async def test_get_camera_rtsp_url_fallback_to_h264(self):
+        """Test fallback to H.264 channel when requested channel unavailable."""
+        client = UniFiProtectClient(
+            host="unifi.local", port=443, username="admin", password="password"
+        )
+
+        # Create only one channel (not the requested one)
+        mock_channels = [
+            MagicMock(rtsp_url="rtsp://camera.local/1", width=1920, height=1080),
+        ]
+
+        mock_camera = MagicMock()
+        mock_camera.name = "Test Camera"
+        mock_camera.channels = mock_channels
+
+        mock_api_client = MagicMock()
+        mock_api_client.bootstrap.cameras.get.return_value = mock_camera
+        client._client = mock_api_client
+
+        # Request high quality (channel 0) but only channel 1 is available
+        rtsp_url = await client.get_camera_rtsp_url("camera-1", quality="high")
+
+        # Should fallback to channel 1
+        assert rtsp_url == "rtsp://camera.local/1"
+
+    async def test_get_camera_rtsp_url_all_fallbacks_exhausted(self):
+        """Test when requested channel and all fallbacks are unavailable."""
+        client = UniFiProtectClient(
+            host="unifi.local", port=443, username="admin", password="password"
+        )
+
+        # Create a pathological scenario: camera.channels changes between checks
+        # This is a race condition that shouldn't happen but tests defensive code
+        class TrickyChannels:
+            def __init__(self):
+                self._len_call_count = 0
+
+            def __bool__(self):
+                return True  # Always truthy
+
+            def __len__(self):
+                # Call 1 (line 132): return 0 (fails > channel_idx check, moves to elif)
+                # Call 2 (line 139): return 1 (passes > 0 check, enters elif block)
+                # Calls 3-5 (line 144): return 0 (fails all > fb_idx checks in loop)
+                self._len_call_count += 1
+                if self._len_call_count == 2:  # Second check passes
+                    return 1
+                return 0  # First check and all fallback checks fail
+
+            def __getitem__(self, index):
+                # Should not be called due to length checks
+                raise IndexError("No channels available")
+
+        mock_camera = MagicMock()
+        mock_camera.name = "Test Camera"
+        mock_camera.channels = TrickyChannels()
+
+        mock_api_client = MagicMock()
+        mock_api_client.bootstrap.cameras.get.return_value = mock_camera
+        client._client = mock_api_client
+
+        rtsp_url = await client.get_camera_rtsp_url("camera-1", quality="high")
+
+        # Should return None when all fallbacks are exhausted
+        assert rtsp_url is None
 
     async def test_get_recent_motion_events_with_event_types(self):
         """Test getting recent motion events (older API)."""
@@ -1460,3 +1611,218 @@ class TestUniFiProtectIntegration:
                 assert integration._initialized is True
                 # Should have cameras data
                 assert "cameras" in initial_data
+
+    async def test_initialize_clients_go2rtc_restart_success(self):
+        """Test go2rtc restart succeeds during initialization."""
+        config = {
+            "host": "https://unifi.local:443",
+            "username": "admin",
+            "password": "password",
+            "go2rtc_url": "http://localhost:1984",
+        }
+        integration = UniFiProtectIntegration(config)
+
+        # Mock camera with channels
+        mock_camera = MagicMock()
+        mock_camera.id = "camera-1"
+        mock_camera.name = "Test Camera"
+        mock_camera.channels = [
+            MagicMock(rtsp_url="rtsp://example.com/camera1/0"),
+        ]
+
+        mock_unifi_client = AsyncMock()
+        mock_unifi_client.connect = AsyncMock()
+        mock_unifi_client.get_cameras = AsyncMock(return_value=[mock_camera])
+
+        mock_go2rtc_client = AsyncMock()
+        # Health check returns True after restart
+        mock_go2rtc_client.check_health = AsyncMock(return_value=True)
+        mock_go2rtc_client.list_streams = AsyncMock(return_value={})
+        mock_go2rtc_client.add_stream = AsyncMock(return_value=True)
+        mock_go2rtc_client.restart = AsyncMock(return_value=True)
+
+        with patch(
+            "integrations.cameras.integration.UniFiProtectClient"
+        ) as mock_unifi_class:
+            with patch(
+                "integrations.cameras.integration.Go2RTCClient"
+            ) as mock_go2rtc_class:
+                mock_unifi_class.return_value = mock_unifi_client
+                mock_go2rtc_class.return_value = mock_go2rtc_client
+
+                await integration._initialize_clients()
+
+                # Should have restarted go2rtc
+                mock_go2rtc_client.restart.assert_called_once()
+
+    async def test_initialize_clients_go2rtc_restart_failure(self):
+        """Test go2rtc restart fails during initialization."""
+        config = {
+            "host": "https://unifi.local:443",
+            "username": "admin",
+            "password": "password",
+            "go2rtc_url": "http://localhost:1984",
+        }
+        integration = UniFiProtectIntegration(config)
+
+        # Mock camera with channels
+        mock_camera = MagicMock()
+        mock_camera.id = "camera-1"
+        mock_camera.name = "Test Camera"
+        mock_camera.channels = [
+            MagicMock(rtsp_url="rtsp://example.com/camera1/0"),
+        ]
+
+        mock_unifi_client = AsyncMock()
+        mock_unifi_client.connect = AsyncMock()
+        mock_unifi_client.get_cameras = AsyncMock(return_value=[mock_camera])
+
+        mock_go2rtc_client = AsyncMock()
+        mock_go2rtc_client.check_health = AsyncMock(return_value=True)
+        mock_go2rtc_client.list_streams = AsyncMock(return_value={})
+        mock_go2rtc_client.add_stream = AsyncMock(return_value=True)
+        # Restart fails
+        mock_go2rtc_client.restart = AsyncMock(return_value=False)
+
+        with patch(
+            "integrations.cameras.integration.UniFiProtectClient"
+        ) as mock_unifi_class:
+            with patch(
+                "integrations.cameras.integration.Go2RTCClient"
+            ) as mock_go2rtc_class:
+                mock_unifi_class.return_value = mock_unifi_client
+                mock_go2rtc_class.return_value = mock_go2rtc_client
+
+                await integration._initialize_clients()
+
+                # Should have tried to restart go2rtc
+                mock_go2rtc_client.restart.assert_called_once()
+
+    async def test_initialize_clients_go2rtc_restart_health_check_retries(self):
+        """Test go2rtc health check retries after restart."""
+        config = {
+            "host": "https://unifi.local:443",
+            "username": "admin",
+            "password": "password",
+            "go2rtc_url": "http://localhost:1984",
+        }
+        integration = UniFiProtectIntegration(config)
+
+        # Mock camera with channels
+        mock_camera = MagicMock()
+        mock_camera.id = "camera-1"
+        mock_camera.name = "Test Camera"
+        mock_camera.channels = [
+            MagicMock(rtsp_url="rtsp://example.com/camera1/0"),
+        ]
+
+        mock_unifi_client = AsyncMock()
+        mock_unifi_client.connect = AsyncMock()
+        mock_unifi_client.get_cameras = AsyncMock(return_value=[mock_camera])
+
+        mock_go2rtc_client = AsyncMock()
+        # Health check returns False first few times, then True
+        mock_go2rtc_client.check_health = AsyncMock(
+            side_effect=[True, False, False, True]
+        )
+        mock_go2rtc_client.list_streams = AsyncMock(return_value={})
+        mock_go2rtc_client.add_stream = AsyncMock(return_value=True)
+        mock_go2rtc_client.restart = AsyncMock(return_value=True)
+
+        with patch(
+            "integrations.cameras.integration.UniFiProtectClient"
+        ) as mock_unifi_class:
+            with patch(
+                "integrations.cameras.integration.Go2RTCClient"
+            ) as mock_go2rtc_class:
+                mock_unifi_class.return_value = mock_unifi_client
+                mock_go2rtc_class.return_value = mock_go2rtc_client
+
+                await integration._initialize_clients()
+
+                # Should have restarted and retried health checks
+                assert mock_go2rtc_client.check_health.call_count >= 3
+
+    async def test_initialize_clients_go2rtc_restart_health_check_never_succeeds(self):
+        """Test go2rtc restart when health check never succeeds (all retries exhausted)."""
+        config = {
+            "host": "https://unifi.local:443",
+            "username": "admin",
+            "password": "password",
+            "go2rtc_url": "http://localhost:1984",
+        }
+        integration = UniFiProtectIntegration(config)
+
+        # Mock camera with channels
+        mock_camera = MagicMock()
+        mock_camera.id = "camera-1"
+        mock_camera.name = "Test Camera"
+        mock_camera.channels = [
+            MagicMock(rtsp_url="rtsp://example.com/camera1/0"),
+        ]
+
+        mock_unifi_client = AsyncMock()
+        mock_unifi_client.connect = AsyncMock()
+        mock_unifi_client.get_cameras = AsyncMock(return_value=[mock_camera])
+
+        mock_go2rtc_client = AsyncMock()
+        # Initial health check returns True, but after restart always returns False
+        mock_go2rtc_client.check_health = AsyncMock(
+            side_effect=[True] + [False] * 10  # Initial + all retries fail
+        )
+        mock_go2rtc_client.list_streams = AsyncMock(return_value={})
+        mock_go2rtc_client.add_stream = AsyncMock(return_value=True)
+        mock_go2rtc_client.restart = AsyncMock(return_value=True)
+
+        with patch(
+            "integrations.cameras.integration.UniFiProtectClient"
+        ) as mock_unifi_class:
+            with patch(
+                "integrations.cameras.integration.Go2RTCClient"
+            ) as mock_go2rtc_class:
+                mock_unifi_class.return_value = mock_unifi_client
+                mock_go2rtc_class.return_value = mock_go2rtc_client
+
+                await integration._initialize_clients()
+
+                # Should have tried all 5 retries
+                assert (
+                    mock_go2rtc_client.check_health.call_count == 6
+                )  # 1 initial + 5 retries
+
+    async def test_fetch_data_initializes_clients_on_first_call(self):
+        """Test fetch_data initializes clients on first call."""
+        config = {
+            "host": "https://unifi.local:443",
+            "username": "admin",
+            "password": "password",
+        }
+        integration = UniFiProtectIntegration(config)
+
+        mock_camera = MagicMock()
+        mock_camera.id = "camera-1"
+        mock_camera.name = "Test Camera"
+        mock_camera.status.value = "online"
+        mock_camera.channels = []
+
+        mock_unifi_client = AsyncMock()
+        mock_unifi_client.connect = AsyncMock()
+        mock_unifi_client.get_cameras = AsyncMock(return_value=[mock_camera])
+        mock_unifi_client.get_recent_motion_events = AsyncMock(return_value=[])
+
+        mock_go2rtc_client = AsyncMock()
+        mock_go2rtc_client.check_health = AsyncMock(return_value=True)
+
+        with patch(
+            "integrations.cameras.integration.UniFiProtectClient"
+        ) as mock_unifi_class:
+            with patch(
+                "integrations.cameras.integration.Go2RTCClient"
+            ) as mock_go2rtc_class:
+                mock_unifi_class.return_value = mock_unifi_client
+                mock_go2rtc_class.return_value = mock_go2rtc_client
+
+                # First call should initialize
+                await integration.fetch_data()
+
+                assert integration._initialized is True

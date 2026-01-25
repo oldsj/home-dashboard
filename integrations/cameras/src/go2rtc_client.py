@@ -108,6 +108,23 @@ class Go2RTCClient:
         except httpx.HTTPError:
             return False
 
+    async def restart(self) -> bool:
+        """Restart go2rtc to apply config changes.
+
+        Returns:
+            True if restart triggered (connection drop is expected)
+        """
+        try:
+            response = await self.client.post(f"{self.base_url}/api/restart")
+            return response.status_code == 200
+        except httpx.RemoteProtocolError:
+            # Connection drop is expected when go2rtc restarts
+            logger.info("go2rtc restart triggered (connection closed as expected)")
+            return True
+        except httpx.HTTPError as e:
+            logger.warning(f"Failed to restart go2rtc: {e}")
+            return False
+
     async def list_streams(self) -> dict[str, list[str]]:
         """List all registered streams.
 

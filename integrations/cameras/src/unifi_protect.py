@@ -104,11 +104,15 @@ class UniFiProtectClient:
 
         return [self._camera_to_info(camera) for camera in cameras]
 
-    async def get_camera_rtsp_url(self, camera_id: str) -> Optional[str]:
+    async def get_camera_rtsp_url(
+        self, camera_id: str, quality: str = "low"
+    ) -> Optional[str]:
         """Get RTSP URL for a camera.
 
         Args:
             camera_id: Camera ID
+            quality: Stream quality - "high" (4K H.265), "medium" (1080p H.264),
+                     or "low" (720p H.264). Default "low" for Pi compatibility.
 
         Returns:
             RTSP URL or None if unavailable
@@ -121,10 +125,29 @@ class UniFiProtectClient:
             logger.warning(f"Camera {camera_id} not found")
             return None
 
-        # Get RTSP URL for the highest quality channel
-        if camera.channels and len(camera.channels) > 0:
-            channel = camera.channels[0]  # Channel 0 is typically highest quality
+        # Channel mapping: 0=high (4K H.265), 1=medium (1080p H.264), 2=low (720p H.264)
+        quality_to_channel = {"high": 0, "medium": 1, "low": 2}
+        channel_idx = quality_to_channel.get(quality, 1)
+
+        if camera.channels and len(camera.channels) > channel_idx:
+            channel = camera.channels[channel_idx]
+            logger.info(
+                f"Using {quality} quality stream for {camera.name}: "
+                f"{channel.width}x{channel.height}"
+            )
             return channel.rtsp_url
+        elif camera.channels and len(camera.channels) > 0:
+            # Fallback: prefer H.264 channels (1, 2) over H.265 (0) for Pi compatibility
+            # Try channels in order: 1 (medium H.264), 2 (low H.264), then 0 (high H.265)
+            fallback_order = [1, 2, 0]
+            for fb_idx in fallback_order:
+                if len(camera.channels) > fb_idx:
+                    channel = camera.channels[fb_idx]
+                    logger.warning(
+                        f"Channel {channel_idx} not available for {camera.name}, "
+                        f"falling back to channel {fb_idx}: {channel.width}x{channel.height}"
+                    )
+                    return channel.rtsp_url
 
         return None
 
