@@ -33,7 +33,7 @@ while true; do
 		# Save current working commit for rollback
 		ROLLBACK_COMMIT="${LOCAL}"
 
-		git pull origin "${BRANCH}" --quiet
+		git reset --hard origin/"${BRANCH}"
 
 		# Watch mode detects file changes and syncs/restarts automatically
 		# Wait for sync to complete before health checking

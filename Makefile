@@ -14,7 +14,7 @@ deploy:
 	ssh $(PI_HOST) "cd $(PI_PATH) && git pull"
 	@echo "Deployed! http://$(PI_HOST):9753"
 
-# Release to production: squash merge dev into main
+# Release to production: squash merge dev into main, then rebase dev
 release:
 	git checkout main
 	git pull origin main
@@ -22,3 +22,5 @@ release:
 	git commit -m "Release: $$(git log main..dev --oneline | wc -l | tr -d ' ') commits from dev"
 	git push origin main
 	git checkout dev
+	git rebase main
+	git push -f origin dev

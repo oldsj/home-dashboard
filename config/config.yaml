@@ -13,15 +13,15 @@ layout:
   gap: 16 # pixels between widgets
   padding: 16 # pixels around edge
   widgets:
-    - integration: todoist
-      position:
-        row: 1
-        col: 1
-        width: 1
-        height: 2
     - integration: unifi_protect
       position:
         row: 1
-        col: 2
+        col: 1
         width: 2
+        height: 2
+    - integration: todoist
+      position:
+        row: 1
+        col: 3
+        width: 1
         height: 2
