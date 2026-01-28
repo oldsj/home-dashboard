@@ -6,6 +6,7 @@ set -e
 
 PI_HOST="${1:-office-dashboard}"
 REPO_URL="${2:-https://github.com/oldsj/home-dashboard.git}"
+BRANCH="${3:-dev}"
 
 echo "Setting up dashboard on ${PI_HOST}..."
 
@@ -30,12 +31,12 @@ fi
 ssh "${PI_HOST}" 'groups | grep -q docker || sudo usermod -aG docker $USER'
 
 # Clone or update repo
-echo "Setting up repository..."
+echo "Setting up repository (branch: ${BRANCH})..."
 ssh "${PI_HOST}" "
 if [ -d ~/dashboard/.git ]; then
-    cd ~/dashboard && git fetch origin && git reset --hard origin/main
+    cd ~/dashboard && git fetch origin && git checkout -f ${BRANCH} && git reset --hard origin/${BRANCH} && git clean -fd
 else
-    rm -rf ~/dashboard && git clone ${REPO_URL} ~/dashboard
+    rm -rf ~/dashboard && git clone -b ${BRANCH} ${REPO_URL} ~/dashboard
 fi
 "
 
@@ -66,22 +67,23 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF'
 
-ssh "${PI_HOST}" 'sudo tee /etc/systemd/system/dashboard-updater.service > /dev/null << EOF
+ssh "${PI_HOST}" "sudo tee /etc/systemd/system/dashboard-updater.service > /dev/null << EOF
 [Unit]
 Description=Dashboard Auto-Updater
 After=dashboard.service
 
 [Service]
 Type=simple
-User=$USER
-WorkingDirectory=/home/$USER/dashboard
-ExecStart=/home/$USER/dashboard/scripts/update-loop.sh
+User=\$USER
+WorkingDirectory=/home/\$USER/dashboard
+Environment=BRANCH=${BRANCH}
+ExecStart=/home/\$USER/dashboard/scripts/update-loop.sh
 Restart=always
 RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
-EOF'
+EOF"
 
 ssh "${PI_HOST}" "sudo systemctl daemon-reload && sudo systemctl enable dashboard dashboard-updater"
 

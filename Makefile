@@ -1,4 +1,4 @@
-.PHONY: test deploy
+.PHONY: test deploy release
 
 # Pi deployment config (override with: make deploy PI_HOST=my-pi)
 PI_HOST ?= office-dashboard
@@ -8,17 +8,17 @@ PI_PATH ?= ~/dashboard
 test:
 	uv run pytest -n auto --ff -x tests/
 
-# Deploy code to Pi (./run watches for changes and auto-reloads)
+# Deploy to Pi: push to dev branch and trigger pull
 deploy:
-	@echo "Deploying to $(PI_HOST):$(PI_PATH)..."
-	rsync -avz --delete \
-		--exclude='.git' \
-		--exclude='.venv' \
-		--exclude='__pycache__' \
-		--exclude='*.pyc' \
-		--exclude='.pytest_cache' \
-		--exclude='.trunk' \
-		--exclude='node_modules' \
-		--exclude='.planning' \
-		./ $(PI_HOST):$(PI_PATH)/
-	@echo "Done! http://$(PI_HOST):9753"
+	git push origin dev
+	ssh $(PI_HOST) "cd $(PI_PATH) && git pull"
+	@echo "Deployed! http://$(PI_HOST):9753"
+
+# Release to production: squash merge dev into main
+release:
+	git checkout main
+	git pull origin main
+	git merge --squash dev
+	git commit -m "Release: $$(git log main..dev --oneline | wc -l | tr -d ' ') commits from dev"
+	git push origin main
+	git checkout dev
