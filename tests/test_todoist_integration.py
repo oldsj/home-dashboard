@@ -484,3 +484,363 @@ class TestTodoistIntegration:
         assert len(data["today_tasks"]) == 1
         assert data["today_tasks"][0]["content"] == "Task 1"
         assert data["projects_count"] == 1
+
+    def test_poll_interval_config(self):
+        """Test poll_interval configuration option."""
+        config = {"api_token": "test-token", "poll_interval": 10}
+        integration = TodoistIntegration(config)
+
+        assert integration.get_config_value("poll_interval") == 10
+
+    def test_poll_interval_default(self):
+        """Test poll_interval defaults to 5 seconds."""
+        config = {"api_token": "test-token"}
+        integration = TodoistIntegration(config)
+
+        assert integration.get_config_value("poll_interval") == 5
+
+
+class TestTodoistEventStream:
+    """Tests for Todoist event stream (Sync API) functionality."""
+
+    async def test_check_for_changes_full_sync(self, monkeypatch):
+        """Test _check_for_changes on initial full sync."""
+        import httpx
+
+        config = {"api_token": "test-token-123"}
+        integration = TodoistIntegration(config)
+
+        # Mock httpx response for full sync
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "sync_token": "new-token-123",
+            "full_sync": True,
+            "items": [{"id": "1", "content": "Task 1"}],
+            "projects": [],
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        has_changes, new_token = await integration._check_for_changes(mock_client)
+
+        assert has_changes is True
+        assert new_token == "new-token-123"
+        mock_client.post.assert_called_once()
+
+    async def test_check_for_changes_incremental_with_items(self, monkeypatch):
+        """Test _check_for_changes detects item changes in incremental sync."""
+        import httpx
+
+        config = {"api_token": "test-token-123"}
+        integration = TodoistIntegration(config)
+        integration._sync_token = "existing-token"
+
+        # Mock httpx response with item changes
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "sync_token": "new-token-456",
+            "full_sync": False,
+            "items": [{"id": "2", "content": "New task"}],
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        has_changes, new_token = await integration._check_for_changes(mock_client)
+
+        assert has_changes is True
+        assert new_token == "new-token-456"
+
+    async def test_check_for_changes_incremental_with_projects(self, monkeypatch):
+        """Test _check_for_changes detects project changes."""
+        import httpx
+
+        config = {"api_token": "test-token-123"}
+        integration = TodoistIntegration(config)
+        integration._sync_token = "existing-token"
+
+        # Mock httpx response with project changes
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "sync_token": "new-token-789",
+            "full_sync": False,
+            "projects": [{"id": "p1", "name": "New project"}],
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        has_changes, new_token = await integration._check_for_changes(mock_client)
+
+        assert has_changes is True
+        assert new_token == "new-token-789"
+
+    async def test_check_for_changes_no_changes(self, monkeypatch):
+        """Test _check_for_changes when no changes occurred."""
+        import httpx
+
+        config = {"api_token": "test-token-123"}
+        integration = TodoistIntegration(config)
+        integration._sync_token = "existing-token"
+
+        # Mock httpx response with no changes
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "sync_token": "existing-token",
+            "full_sync": False,
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        has_changes, new_token = await integration._check_for_changes(mock_client)
+
+        assert has_changes is False
+        assert new_token == "existing-token"
+
+    async def test_start_event_stream_yields_initial_data(self, monkeypatch):
+        """Test start_event_stream yields initial data on startup."""
+        import asyncio
+
+        import httpx
+
+        config = {"api_token": "test-token-123", "poll_interval": 1}
+        integration = TodoistIntegration(config)
+
+        # Mock fetch_data
+        mock_data = {"today_tasks": [], "timestamp": "2024-01-01T00:00:00"}
+        monkeypatch.setattr(
+            integration, "fetch_data", AsyncMock(return_value=mock_data)
+        )
+
+        # Mock _check_for_changes to return changes on first call, then cancel
+        call_count = 0
+
+        async def mock_check_for_changes(client):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return True, "new-token"
+            # Cancel after first iteration to prevent infinite loop
+            raise asyncio.CancelledError()
+
+        monkeypatch.setattr(integration, "_check_for_changes", mock_check_for_changes)
+
+        # Mock httpx.AsyncClient
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        monkeypatch.setattr(httpx, "AsyncClient", lambda: mock_client)
+
+        # Collect yielded data
+        yielded_data = []
+        try:
+            async for data in integration.start_event_stream():
+                yielded_data.append(data)
+        except asyncio.CancelledError:
+            pass
+
+        # Should have yielded initial data
+        assert len(yielded_data) >= 1
+        assert yielded_data[0] == mock_data
+
+    async def test_start_event_stream_only_yields_on_changes(self, monkeypatch):
+        """Test start_event_stream only yields when changes are detected."""
+        import asyncio
+
+        import httpx
+
+        config = {"api_token": "test-token-123", "poll_interval": 1}
+        integration = TodoistIntegration(config)
+
+        # Mock asyncio.sleep to avoid actual waiting
+        monkeypatch.setattr(asyncio, "sleep", AsyncMock())
+
+        # Track fetch_data calls
+        fetch_call_count = 0
+        mock_data = {"today_tasks": [], "timestamp": "2024-01-01"}
+
+        async def mock_fetch_data():
+            nonlocal fetch_call_count
+            fetch_call_count += 1
+            return mock_data
+
+        monkeypatch.setattr(integration, "fetch_data", mock_fetch_data)
+
+        # Mock _check_for_changes: True, False, False, True, then cancel
+        check_results = [
+            (True, "token1"),  # Initial - has changes
+            (False, "token1"),  # No changes
+            (False, "token1"),  # No changes
+            (True, "token2"),  # Has changes
+        ]
+        check_index = 0
+
+        async def mock_check_for_changes(client):
+            nonlocal check_index
+            if check_index >= len(check_results):
+                raise asyncio.CancelledError()
+            result = check_results[check_index]
+            check_index += 1
+            return result
+
+        monkeypatch.setattr(integration, "_check_for_changes", mock_check_for_changes)
+
+        # Mock httpx.AsyncClient
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        monkeypatch.setattr(httpx, "AsyncClient", lambda: mock_client)
+
+        # Collect yielded data
+        yielded_data = []
+        try:
+            async for data in integration.start_event_stream():
+                yielded_data.append(data)
+        except asyncio.CancelledError:
+            pass
+
+        # Should have yielded only twice (on changes)
+        assert len(yielded_data) == 2
+        # fetch_data should have been called only twice (when changes detected)
+        assert fetch_call_count == 2
+
+    async def test_start_event_stream_handles_http_error(self, monkeypatch):
+        """Test start_event_stream handles HTTP errors gracefully."""
+        import asyncio
+
+        import httpx
+
+        config = {"api_token": "test-token-123", "poll_interval": 1}
+        integration = TodoistIntegration(config)
+
+        # Mock asyncio.sleep to avoid actual waiting
+        monkeypatch.setattr(asyncio, "sleep", AsyncMock())
+
+        mock_data = {"today_tasks": [], "timestamp": "2024-01-01"}
+        monkeypatch.setattr(
+            integration, "fetch_data", AsyncMock(return_value=mock_data)
+        )
+
+        # Mock _check_for_changes: success, HTTP error, then cancel
+        call_count = 0
+
+        async def mock_check_for_changes(client):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return True, "token1"  # Initial success
+            if call_count == 2:
+                # Simulate HTTP error
+                mock_response = MagicMock()
+                mock_response.status_code = 500
+                raise httpx.HTTPStatusError(
+                    "Server error", request=MagicMock(), response=mock_response
+                )
+            if call_count == 3:
+                return True, "token2"  # Recovery
+            raise asyncio.CancelledError()
+
+        monkeypatch.setattr(integration, "_check_for_changes", mock_check_for_changes)
+
+        # Mock httpx.AsyncClient
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        monkeypatch.setattr(httpx, "AsyncClient", lambda: mock_client)
+
+        # Collect yielded data
+        yielded_data = []
+        try:
+            async for data in integration.start_event_stream():
+                yielded_data.append(data)
+        except asyncio.CancelledError:
+            pass
+
+        # Should have recovered and yielded data
+        assert len(yielded_data) >= 1
+
+    async def test_start_event_stream_auth_error_backoff(self, monkeypatch):
+        """Test start_event_stream backs off on auth errors."""
+        import asyncio
+
+        import httpx
+
+        config = {"api_token": "test-token-123", "poll_interval": 1}
+        integration = TodoistIntegration(config)
+
+        mock_data = {"today_tasks": [], "timestamp": "2024-01-01"}
+        monkeypatch.setattr(
+            integration, "fetch_data", AsyncMock(return_value=mock_data)
+        )
+
+        # Track sleep calls to verify backoff
+        sleep_calls = []
+
+        async def mock_sleep(seconds):
+            sleep_calls.append(seconds)
+            if len(sleep_calls) >= 2:
+                raise asyncio.CancelledError()
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+
+        # Mock _check_for_changes: success, then 401 error
+        call_count = 0
+
+        async def mock_check_for_changes(client):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return True, "token1"  # Initial success
+            # Simulate auth error
+            mock_response = MagicMock()
+            mock_response.status_code = 401
+            raise httpx.HTTPStatusError(
+                "Unauthorized", request=MagicMock(), response=mock_response
+            )
+
+        monkeypatch.setattr(integration, "_check_for_changes", mock_check_for_changes)
+
+        # Mock httpx.AsyncClient
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        monkeypatch.setattr(httpx, "AsyncClient", lambda: mock_client)
+
+        try:
+            async for _ in integration.start_event_stream():
+                pass
+        except asyncio.CancelledError:
+            pass
+
+        # Should have backed off with 60 second sleep on auth error
+        assert 60 in sleep_calls
+
+    async def test_start_event_stream_initial_error_raises(self, monkeypatch):
+        """Test start_event_stream raises on initial sync failure."""
+        import httpx
+
+        config = {"api_token": "test-token-123", "poll_interval": 1}
+        integration = TodoistIntegration(config)
+
+        # Mock _check_for_changes to fail on first call
+        async def mock_check_for_changes(client):
+            raise RuntimeError("Initial sync failed")
+
+        monkeypatch.setattr(integration, "_check_for_changes", mock_check_for_changes)
+
+        # Mock httpx.AsyncClient
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        monkeypatch.setattr(httpx, "AsyncClient", lambda: mock_client)
+
+        # Should raise on initial failure
+        with pytest.raises(RuntimeError, match="Initial sync failed"):
+            async for _ in integration.start_event_stream():
+                pass

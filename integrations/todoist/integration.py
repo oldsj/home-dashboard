@@ -2,18 +2,24 @@
 Todoist integration - Display tasks and projects from Todoist.
 
 Fetches tasks, projects, and productivity stats from Todoist API
-and displays them in a dashboard widget.
+and displays them in a dashboard widget. Uses Sync API for efficient
+near real-time updates.
 """
 
+import asyncio
+import json
 import logging
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Optional
 
+import httpx
 from dashboard_integration_base import BaseIntegration, IntegrationConfig
 from pydantic import Field
 from todoist_api_python.api_async import TodoistAPIAsync
 
 logger = logging.getLogger(__name__)
+
+SYNC_API_URL = "https://api.todoist.com/api/v1/sync"
 
 
 class TodoistConfig(IntegrationConfig):
@@ -30,7 +36,11 @@ class TodoistConfig(IntegrationConfig):
     )
     refresh_rate: int = Field(
         default=60,
-        description="Refresh rate in seconds",
+        description="Refresh rate in seconds (fallback polling)",
+    )
+    poll_interval: int = Field(
+        default=5,
+        description="Sync API poll interval in seconds for real-time updates",
     )
 
 
@@ -51,6 +61,7 @@ class TodoistIntegration(BaseIntegration):
         """Initialize Todoist integration."""
         super().__init__(*args, **kwargs)
         self._api: Optional[TodoistAPIAsync] = None
+        self._sync_token: str = "*"  # Start with full sync  # nosec B105
 
     def _get_api(self) -> TodoistAPIAsync:
         """Get or create Todoist API client."""
@@ -164,3 +175,87 @@ class TodoistIntegration(BaseIntegration):
         except Exception as e:
             logger.error(f"Error fetching Todoist data: {e}")
             raise
+
+    async def _check_for_changes(self, client: httpx.AsyncClient) -> tuple[bool, str]:
+        """
+        Check Todoist Sync API for changes since last sync.
+
+        Returns:
+            Tuple of (has_changes, new_sync_token)
+        """
+        api_token = self.get_config_value("api_token")
+
+        response = await client.post(
+            SYNC_API_URL,
+            headers={"Authorization": f"Bearer {api_token}"},
+            data={
+                "sync_token": self._sync_token,
+                "resource_types": json.dumps(["items", "projects"]),
+            },
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        new_token = data.get("sync_token", self._sync_token)
+        is_full_sync = data.get("full_sync", False)
+
+        # Check if there are any task or project changes
+        has_items = bool(data.get("items"))
+        has_projects = bool(data.get("projects"))
+        has_changes = is_full_sync or has_items or has_projects
+
+        if has_changes:
+            logger.debug(
+                f"Todoist changes detected: full_sync={is_full_sync}, "
+                f"items={has_items}, projects={has_projects}"
+            )
+
+        return has_changes, new_token
+
+    async def start_event_stream(self) -> AsyncIterator[dict[str, Any]]:
+        """
+        Stream Todoist updates using efficient Sync API polling.
+
+        Uses incremental sync tokens to detect changes quickly without
+        fetching all data on every poll. Only yields updates when
+        tasks or projects have actually changed.
+        """
+        poll_interval = self.get_config_value("poll_interval", 5)
+        logger.info(
+            f"Todoist starting event stream with {poll_interval}s poll interval"
+        )
+
+        # Reset sync token for fresh start ("*" is Todoist's documented initial sync token)
+        self._sync_token = "*"  # nosec B105
+
+        async with httpx.AsyncClient() as client:
+            # Initial sync - always yield first data
+            try:
+                has_changes, new_token = await self._check_for_changes(client)
+                self._sync_token = new_token
+                yield await self.fetch_data()
+            except Exception as e:
+                logger.error(f"Todoist initial sync failed: {e}")
+                raise
+
+            # Continuous polling for changes
+            while True:
+                await asyncio.sleep(poll_interval)
+
+                try:
+                    has_changes, new_token = await self._check_for_changes(client)
+                    self._sync_token = new_token
+
+                    if has_changes:
+                        logger.debug("Todoist pushing update due to changes")
+                        yield await self.fetch_data()
+
+                except httpx.HTTPStatusError as e:
+                    logger.error(f"Todoist sync API error: {e.response.status_code}")
+                    # On auth errors, don't keep retrying rapidly
+                    if e.response.status_code in (401, 403):
+                        await asyncio.sleep(60)
+                except Exception as e:
+                    logger.error(f"Todoist sync error: {e}")
+                    await asyncio.sleep(poll_interval)

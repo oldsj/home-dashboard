@@ -41,8 +41,8 @@ fi
 
 # Copy local credentials if they exist
 if [[ -f config/credentials.yaml ]]; then
-    echo "Copying credentials..."
-    scp config/credentials.yaml "${PI_HOST}:~/dashboard/config/credentials.yaml"
+	echo "Copying credentials..."
+	scp config/credentials.yaml "${PI_HOST}:~/dashboard/config/credentials.yaml"
 fi
 
 # Create systemd services
@@ -57,7 +57,7 @@ Requires=docker.service
 Type=simple
 User=$USER
 WorkingDirectory=/home/$USER/dashboard
-ExecStart=/usr/bin/docker compose up
+ExecStart=/usr/bin/docker compose up --build --watch
 ExecStop=/usr/bin/docker compose down
 Restart=always
 RestartSec=10
@@ -86,17 +86,17 @@ EOF'
 ssh "${PI_HOST}" "sudo systemctl daemon-reload && sudo systemctl enable dashboard dashboard-updater"
 
 # Handle fresh Docker install vs update
-if [[ "${FRESH_DOCKER}" == *"yes"* ]]; then
-    echo ""
-    echo "Fresh Docker install detected - rebooting for permissions..."
-    ssh "${PI_HOST}" "sudo reboot" || true
-    echo ""
-    echo "Pi is rebooting. Dashboard will start automatically at:"
-    echo "  http://${PI_HOST}:9753"
+if [[ ${FRESH_DOCKER} == *"yes"* ]]; then
+	echo ""
+	echo "Fresh Docker install detected - rebooting for permissions..."
+	ssh "${PI_HOST}" "sudo reboot" || true
+	echo ""
+	echo "Pi is rebooting. Dashboard will start automatically at:"
+	echo "  http://${PI_HOST}:9753"
 else
-    echo "Starting services..."
-    ssh "${PI_HOST}" "sudo systemctl restart dashboard dashboard-updater"
-    echo ""
-    echo "Setup complete!"
-    echo "Dashboard will be at: http://${PI_HOST}:9753"
+	echo "Starting services..."
+	ssh "${PI_HOST}" "sudo systemctl restart dashboard dashboard-updater"
+	echo ""
+	echo "Setup complete!"
+	echo "Dashboard will be at: http://${PI_HOST}:9753"
 fi
