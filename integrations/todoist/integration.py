@@ -9,7 +9,7 @@ near real-time updates.
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, AsyncIterator, Optional
 
 import httpx
@@ -41,6 +41,14 @@ class TodoistConfig(IntegrationConfig):
     poll_interval: int = Field(
         default=5,
         description="Sync API poll interval in seconds for real-time updates",
+    )
+    work_parent_project: str = Field(
+        default="",
+        description="Parent project name - all sub-projects will be shown with hours tracking",
+    )
+    work_project_targets: dict[str, float] = Field(
+        default={},
+        description="Map of sub-project names to weekly target hours (e.g., {'foodtrails': 20})",
     )
 
 
@@ -103,6 +111,7 @@ class TodoistIntegration(BaseIntegration):
                 async for project_batch in projects_result:
                     projects.extend(project_batch)
             project_map = {p.id: p.name for p in projects}
+            project_parent_map = {p.id: getattr(p, "parent_id", None) for p in projects}
 
             # Categorize tasks
             today = datetime.now().date()
@@ -119,6 +128,7 @@ class TodoistIntegration(BaseIntegration):
                     "labels": task.labels,
                     "project_id": task.project_id,
                     "project_name": project_map.get(task.project_id, ""),
+                    "duration": getattr(task, "duration", None),
                     "due": None,
                 }
 
@@ -156,18 +166,34 @@ class TodoistIntegration(BaseIntegration):
             today_tasks.sort(key=lambda t: t["priority"], reverse=True)
             overdue_tasks.sort(key=lambda t: t["priority"], reverse=True)
 
-            # Get completed tasks count for today
-            # Note: The API doesn't provide easy access to completed tasks count
-            # You'd need to use the Sync API or activity log for this
-            completed_today = 0
+            # Fetch completed tasks for today, this week, and weekly sparkline
+            completed_tasks, weekly_completed, weekly_sparkline = (
+                await self._fetch_completed_with_weekly(project_map)
+            )
+
+            # Process work sub-projects with hours tracking (uses weekly completed)
+            work_projects, work_project_ids = self._process_work_projects(
+                weekly_completed, today_tasks, project_map, project_parent_map
+            )
+
+            # Filter out work sub-project tasks from general queues
+            today_tasks = [
+                t for t in today_tasks if t["project_id"] not in work_project_ids
+            ]
+            overdue_tasks = [
+                t for t in overdue_tasks if t["project_id"] not in work_project_ids
+            ]
 
             return {
                 "today_tasks": today_tasks,
                 "overdue_tasks": overdue_tasks,
                 "upcoming_count": len(upcoming_tasks),
-                "completed_today": completed_today,
+                "completed_today": len(completed_tasks),
+                "completed_tasks": completed_tasks,
+                "weekly_sparkline": weekly_sparkline,
                 "total_tasks": len(all_tasks),
                 "projects_count": len(projects),
+                "work_projects": work_projects,
                 "timestamp": datetime.now().isoformat(),
                 "max_tasks": max_tasks,
             }
@@ -175,6 +201,273 @@ class TodoistIntegration(BaseIntegration):
         except Exception as e:
             logger.error(f"Error fetching Todoist data: {e}")
             raise
+
+    async def _fetch_completed_with_weekly(
+        self, project_map: dict[str, str]
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+        """
+        Fetch completed tasks for current week (Monday-Sunday).
+
+        Returns:
+            Tuple of (today's completed tasks, this week's completed tasks, weekly sparkline data)
+        """
+        api_token = self.get_config_value("api_token")
+        today = datetime.now().date()
+        # Calculate Monday of current week (weekday() returns 0 for Monday)
+        week_start = today - timedelta(days=today.weekday())
+
+        # Initialize daily counts for current week (Mon-Sun)
+        daily_counts: dict[str, int] = {}
+        for i in range(7):
+            day = (week_start + timedelta(days=i)).isoformat()
+            daily_counts[day] = 0
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://api.todoist.com/sync/v9/completed/get_all",
+                    headers={"Authorization": f"Bearer {api_token}"},
+                    data={
+                        "since": f"{week_start.isoformat()}T00:00:00",
+                        "limit": "200",
+                    },
+                    timeout=30.0,
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                today_tasks = []
+                weekly_tasks = []
+                today_str = today.isoformat()
+                week_start_str = week_start.isoformat()
+
+                items = data.get("items", [])
+                logger.debug(f"Sync API returned {len(items)} completed items")
+
+                # Collect task IDs that need duration lookup
+                tasks_needing_duration: list[dict[str, Any]] = []
+
+                for item in items:
+                    completed_at = item.get("completed_at", "")
+                    if completed_at:
+                        # Extract date from ISO timestamp
+                        completed_date = completed_at[:10]
+                        if completed_date in daily_counts:
+                            daily_counts[completed_date] += 1
+
+                        # Build task dict - use v2_project_id for new ID format
+                        v2_project_id = item.get("v2_project_id")
+                        v2_task_id = item.get("v2_task_id")
+                        task_dict = {
+                            "id": v2_task_id or item.get("task_id"),
+                            "content": item.get("content", ""),
+                            "project_id": v2_project_id,
+                            "project_name": project_map.get(v2_project_id, ""),
+                            "duration": None,  # Will be fetched via REST API
+                            "completed_at": completed_at,
+                            "completed_date": completed_date,
+                        }
+                        tasks_needing_duration.append(task_dict)
+
+                # Fetch duration for tasks via REST API (batched)
+                await self._fetch_task_durations(
+                    client, api_token, tasks_needing_duration
+                )
+
+                # Now categorize tasks
+                for task_dict in tasks_needing_duration:
+                    completed_date = task_dict.pop("completed_date")
+
+                    # Collect today's tasks for the list
+                    if completed_date == today_str:
+                        today_tasks.append(task_dict)
+
+                    # Collect all weekly tasks for work project tracking
+                    if completed_date >= week_start_str:
+                        weekly_tasks.append(task_dict)
+
+                # Sort tasks by completion time, most recent first
+                today_tasks.sort(
+                    key=lambda t: t.get("completed_at") or "", reverse=True
+                )
+                weekly_tasks.sort(
+                    key=lambda t: t.get("completed_at") or "", reverse=True
+                )
+
+                # Build sparkline data
+                counts = [daily_counts[d] for d in sorted(daily_counts.keys())]
+                max_count = max(counts) if counts else 0
+                sparkline = {
+                    "counts": counts,
+                    "max": max_count,
+                    "total": sum(counts),
+                    "bars": self._counts_to_sparkline(counts),
+                }
+
+                return today_tasks, weekly_tasks, sparkline
+
+        except Exception as e:
+            logger.warning(f"Failed to fetch completed tasks: {e}")
+            return [], [], {"counts": [0] * 7, "max": 0, "total": 0, "bars": "▁▁▁▁▁▁▁"}
+
+    async def _fetch_task_durations(
+        self,
+        client: httpx.AsyncClient,
+        api_token: str,
+        tasks: list[dict[str, Any]],
+    ) -> None:
+        """
+        Fetch duration for completed tasks via REST API.
+
+        The Sync API doesn't include duration for completed tasks,
+        so we fetch each task individually via REST API v2.
+
+        Args:
+            client: HTTP client to use
+            api_token: Todoist API token
+            tasks: List of task dicts to update with duration (modified in place)
+        """
+        for task in tasks:
+            task_id = task.get("id")
+            if not task_id:
+                continue
+
+            try:
+                resp = await client.get(
+                    f"https://api.todoist.com/rest/v2/tasks/{task_id}",
+                    headers={"Authorization": f"Bearer {api_token}"},
+                    timeout=10.0,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    task["duration"] = data.get("duration")
+            except Exception as e:
+                logger.debug(f"Failed to fetch duration for task {task_id}: {e}")
+
+    def _counts_to_sparkline(self, counts: list[int]) -> str:
+        """Convert counts to sparkline characters."""
+        if not counts or max(counts) == 0:
+            return "▁" * len(counts)
+
+        bars = "▁▂▃▄▅▆▇█"
+        max_val = max(counts)
+        result = []
+        for c in counts:
+            idx = int((c / max_val) * (len(bars) - 1)) if max_val > 0 else 0
+            result.append(bars[idx])
+        return "".join(result)
+
+    def _parse_duration_to_minutes(self, duration: dict | None) -> int:
+        """
+        Parse Todoist duration object to total minutes.
+
+        Args:
+            duration: Dict with 'amount' and 'unit' keys
+
+        Returns:
+            Total minutes, or 0 if no duration
+        """
+        if not duration:
+            return 0
+
+        amount = duration.get("amount", 0)
+        unit = duration.get("unit", "minute")
+
+        if unit == "minute":
+            return amount
+        elif unit == "hour":
+            return amount * 60
+        elif unit == "day":
+            return amount * 60 * 8  # 8-hour workday
+        return 0
+
+    def _process_work_projects(
+        self,
+        completed_tasks: list[dict[str, Any]],
+        today_tasks: list[dict[str, Any]],
+        project_map: dict[str, str],
+        project_parent_map: dict[str, str | None],
+    ) -> tuple[list[dict[str, Any]], set[str]]:
+        """
+        Process work sub-projects to calculate hours and group tasks.
+
+        Dynamically discovers all sub-projects under the configured parent project.
+
+        Args:
+            completed_tasks: List of completed tasks with project info
+            today_tasks: List of today's active tasks
+            project_map: Map of project IDs to names
+            project_parent_map: Map of project IDs to parent IDs
+
+        Returns:
+            Tuple of (work project data dicts, set of work project IDs)
+        """
+        parent_project_name = self.get_config_value("work_parent_project", "")
+        if not parent_project_name:
+            return [], set()
+
+        # Find parent project ID by name
+        name_to_id = {name: pid for pid, name in project_map.items()}
+        parent_id = name_to_id.get(parent_project_name)
+        if not parent_id:
+            logger.debug(f"Work parent project '{parent_project_name}' not found")
+            return [], set()
+
+        # Find all sub-projects under the parent
+        sub_project_ids = {
+            pid for pid, parent in project_parent_map.items() if parent == parent_id
+        }
+
+        # Only include projects with configured targets
+        targets = self.get_config_value("work_project_targets", {})
+
+        work_projects = []
+        for project_id in sub_project_ids:
+            project_name = project_map.get(project_id, "Unknown")
+
+            # Skip projects without configured targets
+            if project_name not in targets:
+                continue
+
+            # Filter completed tasks for this project
+            project_completed = [
+                t for t in completed_tasks if t.get("project_id") == project_id
+            ]
+
+            # Filter today's active tasks for this project
+            project_active = [
+                t for t in today_tasks if t.get("project_id") == project_id
+            ]
+
+            # Calculate total hours from completed task durations
+            total_minutes = sum(
+                self._parse_duration_to_minutes(t.get("duration"))
+                for t in project_completed
+            )
+            total_hours = total_minutes / 60.0 if total_minutes > 0 else 0
+
+            # Get target hours for this project
+            target_hours = targets.get(project_name, 0)
+            progress_percent = (
+                (total_hours / target_hours * 100) if target_hours > 0 else 0
+            )
+
+            work_projects.append(
+                {
+                    "id": project_id,
+                    "name": project_name,
+                    "completed_tasks": project_completed[:5],  # Limit to 5
+                    "active_tasks": project_active[:3],  # Limit to 3
+                    "total_hours": total_hours,
+                    "target_hours": target_hours,
+                    "progress_percent": min(progress_percent, 100),  # Cap at 100%
+                    "over_target": progress_percent > 100,
+                    "completed_count": len(project_completed),
+                    "active_count": len(project_active),
+                }
+            )
+
+        return work_projects, sub_project_ids
 
     async def _check_for_changes(self, client: httpx.AsyncClient) -> tuple[bool, str]:
         """

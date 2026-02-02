@@ -10,7 +10,14 @@
         Task_Queue
       </h2>
     </div>
-    <div class="flex items-center gap-4 text-[0.65rem] tracking-wider">
+    {% if data.weekly_sparkline %}
+    <span
+      class="text-base font-mono text-command-amber tracking-widest"
+      title="Last 7 days: {{ data.weekly_sparkline.counts|join(', ') }} ({{ data.weekly_sparkline.total }} total)"
+      >{{ data.weekly_sparkline.bars }}</span
+    >
+    {% endif %}
+    <div class="flex items-center gap-4 text-xs tracking-wider">
       <div class="flex items-center gap-1.5">
         <span class="text-command-cyan opacity-60">TOTAL</span>
         <span class="font-bold text-command-amber">{{ data.total_tasks }}</span>
@@ -26,6 +33,8 @@
 
   {# Status grid with data display styling #}
   <div class="grid grid-cols-3 gap-2 mb-4">
+    {# Overdue - red only when there are items, muted when 0 #} {% if
+    data.overdue_tasks|length > 0 %}
     <div
       class="bg-command-darker border border-command-red/40 p-2 relative overflow-hidden group"
     >
@@ -38,12 +47,20 @@
           {{ '%02d'|format(data.overdue_tasks|length) }}
         </div>
       </div>
-      {% if data.overdue_tasks|length > 0 %}
       <div
         class="absolute top-1 right-1 w-1.5 h-1.5 bg-command-red rounded-full animate-glow-pulse"
       ></div>
-      {% endif %}
     </div>
+    {% else %}
+    <div
+      class="bg-command-darker border border-command-border p-2 relative overflow-hidden group"
+    >
+      <div class="relative">
+        <div class="data-label text-command-cyan/40 mb-1">Overdue</div>
+        <div class="data-value text-command-cyan/40">00</div>
+      </div>
+    </div>
+    {% endif %}
     <div
       class="bg-command-darker border border-command-cyan/40 p-2 relative overflow-hidden group"
     >
@@ -76,9 +93,7 @@
   <div class="mb-3">
     <div class="flex items-center gap-2 mb-2">
       <div class="w-0.5 h-3 bg-command-red"></div>
-      <h3
-        class="text-[0.7rem] font-bold tracking-widest text-command-red uppercase"
-      >
+      <h3 class="text-xs font-bold tracking-widest text-command-red uppercase">
         Critical_Priority
       </h3>
       <div
@@ -92,14 +107,12 @@
       >
         <div class="flex items-start justify-between gap-2">
           <div class="flex-1 min-w-0">
-            <div
-              class="text-[0.7rem] text-white font-medium leading-tight mb-1"
-            >
+            <div class="text-xs text-white font-medium leading-tight mb-1">
               {{ task.content }}
             </div>
             {% if task.due.date %}
             <div
-              class="text-[0.6rem] text-command-red/80 font-mono tracking-wider"
+              class="text-[0.7rem] text-command-red/80 font-mono tracking-wider"
             >
               DUE:{{ task.due.date }}
             </div>
@@ -121,9 +134,7 @@
   <div class="flex-1 overflow-hidden flex flex-col">
     <div class="flex items-center gap-2 mb-2">
       <div class="w-0.5 h-3 bg-command-cyan"></div>
-      <h3
-        class="text-[0.7rem] font-bold tracking-widest text-command-cyan uppercase"
-      >
+      <h3 class="text-xs font-bold tracking-widest text-command-cyan uppercase">
         Active_Queue
       </h3>
       <div
@@ -138,18 +149,18 @@
       >
         <div class="flex items-start justify-between gap-2">
           <div class="flex-1 min-w-0">
-            <div class="text-[0.7rem] text-white font-medium leading-tight">
+            <div class="text-xs text-white font-medium leading-tight">
               {{ task.content }}
             </div>
             {% if task.description %}
             <div
-              class="text-[0.6rem] text-command-cyan/50 mt-1 truncate font-mono"
+              class="text-[0.7rem] text-command-cyan/50 mt-1 truncate font-mono"
             >
               {{ task.description }}
             </div>
             {% endif %}
             <div
-              class="flex items-center gap-2 mt-1 text-[0.55rem] tracking-wider"
+              class="flex items-center gap-2 mt-1 text-[0.65rem] tracking-wider"
             >
               {% if task.project_id %}
               <span class="text-command-cyan/40 uppercase"
@@ -168,7 +179,7 @@
               class="w-1.5 h-1.5 bg-command-amber rounded-full status-indicator"
             ></div>
             {% endif %} {% if task.labels %}
-            <div class="text-[0.55rem] text-command-cyan/60 font-mono">
+            <div class="text-[0.65rem] text-command-cyan/60 font-mono">
               +{{ task.labels|length }}
             </div>
             {% endif %}
@@ -180,7 +191,7 @@
     {% else %}
     <div class="flex-1 flex items-center justify-center">
       <div class="text-center">
-        <div class="text-[0.7rem] text-command-cyan/30 tracking-widest mb-2">
+        <div class="text-xs text-command-cyan/30 tracking-widest mb-2">
           [ QUEUE_EMPTY ]
         </div>
         <div class="w-16 h-px bg-command-cyan/20 mx-auto"></div>
@@ -189,12 +200,124 @@
     {% endif %}
   </div>
 
-  {# Upcoming count footer #} {% if data.upcoming_count > 0 %}
+  {# Work Projects - Dedicated sections with hours tracking #} {% if
+  data.work_projects %}
+  <div class="mt-4 space-y-3">
+    {% for project in data.work_projects %}
+    <div class="border border-command-amber/30 bg-command-darker/40 p-2">
+      {# Project header with hours #}
+      <div
+        class="flex items-center justify-between mb-1 pb-1.5 border-b border-command-amber/20"
+      >
+        <div class="flex items-center gap-2">
+          <div class="w-1 h-3 bg-command-amber"></div>
+          <h3
+            class="text-xs font-bold tracking-widest text-command-amber uppercase"
+          >
+            {{ project.name }}
+          </h3>
+        </div>
+        <div class="flex items-center gap-2">
+          {% if project.target_hours > 0 %}
+          <span
+            class="text-[0.7rem] {% if project.over_target %}text-command-green{% else %}text-command-amber/60{% endif %} font-mono tracking-wider"
+            >{{ '%.1f'|format(project.total_hours) }}/{{
+            project.target_hours|int }}h</span
+          >
+          <span
+            class="text-[0.7rem] font-bold {% if project.over_target %}text-command-green{% elif project.progress_percent >= 75 %}text-command-amber{% else %}text-command-cyan{% endif %} font-mono"
+            >{{ '%.0f'|format(project.progress_percent) }}%</span
+          >
+          {% elif project.total_hours > 0 %}
+          <span
+            class="text-[0.7rem] text-command-amber/60 font-mono tracking-wider"
+            >HRS:</span
+          >
+          <span class="text-sm font-bold text-command-amber font-mono"
+            >{{ '%.1f'|format(project.total_hours) }}</span
+          >
+          {% endif %}
+        </div>
+      </div>
+
+      {# Progress bar for target tracking #} {% if project.target_hours > 0 %}
+      <div class="mb-2">
+        <div class="h-1.5 bg-command-darker rounded-sm overflow-hidden">
+          <div
+            class="h-full transition-all duration-500 {% if project.over_target %}bg-command-green{% elif project.progress_percent >= 75 %}bg-command-amber{% else %}bg-command-cyan{% endif %}"
+            style="width: {{ [project.progress_percent, 100]|min }}%"
+          ></div>
+        </div>
+      </div>
+      {% endif %} {# Active tasks for this project #} {% if project.active_tasks
+      %}
+      <div class="space-y-1">
+        {% for task in project.active_tasks %}
+        <div
+          class="bg-command-panel/30 border-l-2 border-command-amber/40 p-1.5"
+        >
+          <div class="text-[0.7rem] text-white leading-tight">
+            {{ task.content }}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% elif project.total_hours == 0 %}
+      <div class="text-center py-2">
+        <div class="text-[0.65rem] text-command-amber/30 tracking-widest">
+          [ NO_ACTIVITY ]
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %} {# Upcoming count footer #} {% if data.upcoming_count > 0 %}
   <div class="mt-3 pt-2 border-t border-command-border">
     <div
-      class="text-[0.6rem] text-command-cyan/60 text-center tracking-widest font-mono"
+      class="text-[0.7rem] text-command-cyan/60 text-center tracking-widest font-mono"
     >
       +{{ '%02d'|format(data.upcoming_count) }}_UPCOMING_TASKS
+    </div>
+  </div>
+  {% endif %} {# Completed tasks section #} {% if data.completed_tasks %}
+  <div class="mt-3 pt-2 border-t border-command-border">
+    <div class="flex items-center gap-2 mb-2">
+      <div class="w-0.5 h-3 bg-command-green/60"></div>
+      <h3
+        class="text-xs font-bold tracking-widest text-command-green/60 uppercase"
+      >
+        Completed_Today
+      </h3>
+      <div
+        class="flex-1 h-px bg-gradient-to-r from-command-green/20 to-transparent"
+      ></div>
+      <span class="text-[0.65rem] text-command-green/50 font-mono"
+        >{{ data.completed_tasks|length }}</span
+      >
+    </div>
+    <div class="space-y-1 max-h-24 overflow-y-auto pr-1">
+      {% for task in data.completed_tasks[:5] %}
+      <div
+        class="bg-command-darker/40 border-l-2 border-command-green/30 p-1.5 group"
+      >
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex-1 min-w-0">
+            <div
+              class="text-[0.7rem] text-command-green/50 leading-tight truncate"
+            >
+              {{ task.content }}
+            </div>
+          </div>
+          {% if task.project_name %}
+          <span
+            class="text-[0.6rem] text-command-green/30 uppercase flex-shrink-0"
+            >{{ task.project_name }}</span
+          >
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
     </div>
   </div>
   {% endif %}

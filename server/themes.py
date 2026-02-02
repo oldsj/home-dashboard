@@ -50,12 +50,12 @@ INDUSTRIAL_THEME: Theme = {
     "name": "industrial",
     "display_name": "Industrial Command Center",
     "colors": {
-        # Backgrounds
-        "bg_black": "#000000",
-        "bg_darker": "#0a0a0a",
-        "bg_dark": "#111111",
-        "bg_panel": "#1a1a1a",
-        "bg_border": "#2a2a2a",
+        # Backgrounds - lightened for better readability
+        "bg_black": "#0d1117",
+        "bg_darker": "#161b22",
+        "bg_dark": "#21262d",
+        "bg_panel": "#2d333b",
+        "bg_border": "#444c56",
         # Primary accent (cyan)
         "primary": "#00d4ff",
         "primary_glow": "#00ffff",
@@ -68,11 +68,11 @@ INDUSTRIAL_THEME: Theme = {
         "warning": "#ffb000",
         "error": "#ff3355",
         "status_online": "#00ff88",
-        "status_offline": "#555555",
-        # Text
+        "status_offline": "#6e7681",
+        # Text - improved contrast
         "text_primary": "#00d4ff",
-        "text_secondary": "#ffffff",
-        "text_muted": "#666666",
+        "text_secondary": "#f0f6fc",
+        "text_muted": "#8b949e",
     },
 }
 

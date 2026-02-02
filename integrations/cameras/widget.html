@@ -10,7 +10,7 @@
         Surveillance_Grid
       </h2>
     </div>
-    <div class="text-[0.65rem] tracking-wider">
+    <div class="text-xs tracking-wider">
       <span class="text-command-cyan opacity-60">ACTIVE</span>
       <span class="font-bold text-command-amber ml-1"
         >{{ '%02d'|format(data.cameras|selectattr('status', 'equalto',
@@ -30,8 +30,7 @@
       <div
         class="bg-command-black/90 px-2 py-1.5 flex items-center justify-between border-b border-command-border"
       >
-        <span
-          class="text-[0.65rem] font-bold text-white tracking-wider uppercase"
+        <span class="text-xs font-bold text-white tracking-wider uppercase"
           >{{ camera.name }}</span
         >
         <div class="flex items-center gap-2">
@@ -39,7 +38,7 @@
           <div class="flex items-center gap-1 motion-alert">
             <div class="w-1.5 h-1.5 bg-command-amber rounded-full"></div>
             <span
-              class="text-[0.6rem] text-command-amber font-mono tracking-wider"
+              class="text-[0.7rem] text-command-amber font-mono tracking-wider"
               >MOTION</span
             >
           </div>
@@ -93,7 +92,7 @@
 
       {# Camera info footer with telemetry data #}
       <div
-        class="bg-command-black/70 px-2 py-1 text-[0.55rem] text-command-cyan/60 flex justify-between border-t border-command-border font-mono tracking-wider"
+        class="bg-command-black/70 px-2 py-1 text-[0.65rem] text-command-cyan/60 flex justify-between border-t border-command-border font-mono tracking-wider"
       >
         <span class="uppercase">{{ camera.model or 'UNKNOWN' }}</span>
         <span>{{ camera.resolution or '--' }}</span>
@@ -107,7 +106,7 @@
     <div class="flex items-center gap-2 mb-1.5">
       <div class="w-0.5 h-2.5 bg-command-amber"></div>
       <h3
-        class="text-[0.65rem] font-bold tracking-widest text-command-amber uppercase"
+        class="text-xs font-bold tracking-widest text-command-amber uppercase"
       >
         Motion_Log
       </h3>
@@ -118,7 +117,7 @@
     <div class="space-y-0.5 max-h-20 overflow-y-auto pr-1">
       {% for event in data.recent_motion_events[:5] %}
       <div
-        class="flex justify-between text-[0.6rem] font-mono tracking-wider bg-command-darker/40 px-2 py-1"
+        class="flex justify-between text-[0.7rem] font-mono tracking-wider bg-command-darker/40 px-2 py-1"
       >
         <span class="text-command-cyan/80">{{ event.camera_name }}</span>
         <span class="text-command-amber/60"
@@ -230,7 +229,7 @@
           "absolute inset-0 flex items-center justify-center bg-command-black/90 loading-overlay border border-command-border/30";
         const text = document.createElement("div");
         text.className =
-          "text-command-cyan text-[0.65rem] font-mono tracking-widest animate-pulse";
+          "text-command-cyan text-xs font-mono tracking-widest animate-pulse";
         text.textContent = "CONNECTING...";
         overlay.appendChild(text);
         window._loadingOverlays.set(this.cameraId, overlay);
@@ -318,7 +317,7 @@
         this.ws.onerror = () => {
           const errorDiv = document.createElement("div");
           errorDiv.className =
-            "text-command-red text-[0.65rem] font-mono tracking-widest";
+            "text-command-red text-xs font-mono tracking-widest";
           errorDiv.textContent = "CONNECTION_FAILED";
           this.loadingOverlay.replaceChildren(errorDiv);
         };
@@ -326,7 +325,7 @@
         console.error("WebRTC error:", error);
         const errorDiv = document.createElement("div");
         errorDiv.className =
-          "text-command-red text-[0.65rem] font-mono tracking-widest";
+          "text-command-red text-xs font-mono tracking-widest";
         errorDiv.textContent = "ERROR";
         this.loadingOverlay.replaceChildren(errorDiv);
       }

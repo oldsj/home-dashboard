@@ -100,9 +100,14 @@
         font-variant-numeric: tabular-nums;
       }
 
+      html {
+        font-size: 18px; /* Base font size - increase for larger text */
+      }
+
       body {
         font-family: "IBM Plex Mono", "Courier New", monospace;
-        letter-spacing: -0.02em;
+        letter-spacing: -0.01em;
+        line-height: 1.5;
       }
 
       :root {
@@ -255,19 +260,19 @@
 
       /* Data display styling */
       .data-label {
-        font-size: 0.65rem;
+        font-size: 0.75rem;
         font-weight: 500;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
         color: {{ theme.colors.primary }};
-        opacity: 0.7;
+        opacity: 0.85;
       }
 
       .data-value {
-        font-size: 1.75rem;
+        font-size: 1.875rem;
         font-weight: 700;
-        letter-spacing: -0.03em;
-        text-shadow: 0 0 12px currentColor;
+        letter-spacing: -0.02em;
+        text-shadow: 0 0 10px currentColor;
       }
 
       /* Secondary accent animations */
