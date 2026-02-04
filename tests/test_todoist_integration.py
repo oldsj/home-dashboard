@@ -923,8 +923,8 @@ class TestTodoistEventStream:
 class TestTodoistCompletedTasks:
     """Tests for completed tasks functionality."""
 
-    async def test_fetch_completed_with_weekly_successful(self, monkeypatch):
-        """Test _fetch_completed_with_weekly successfully fetches and processes tasks."""
+    async def test_fetch_completed_with_billing_successful(self, monkeypatch):
+        """Test _fetch_completed_with_billing successfully fetches and processes tasks."""
         import httpx
 
         config = {"api_token": "test-token-123"}
@@ -1000,7 +1000,7 @@ class TestTodoistCompletedTasks:
         monkeypatch.setattr(httpx, "AsyncClient", mock_async_client_factory)
 
         today_tasks, weekly_tasks, sparkline = (
-            await integration._fetch_completed_with_weekly(project_map)
+            await integration._fetch_completed_with_billing(project_map)
         )
 
         # Verify today's tasks
@@ -1017,8 +1017,8 @@ class TestTodoistCompletedTasks:
         assert len(sparkline["counts"]) == 7  # 7 days
         assert len(sparkline["bars"]) == 7
 
-    async def test_fetch_completed_with_weekly_with_missing_project(self, monkeypatch):
-        """Test _fetch_completed_with_weekly handles tasks with unknown project_id."""
+    async def test_fetch_completed_with_billing_with_missing_project(self, monkeypatch):
+        """Test _fetch_completed_with_billing handles tasks with unknown project_id."""
         import httpx
 
         config = {"api_token": "test-token-123"}
@@ -1052,15 +1052,15 @@ class TestTodoistCompletedTasks:
         monkeypatch.setattr(httpx, "AsyncClient", mock_async_client_factory)
 
         today_tasks, weekly_tasks, sparkline = (
-            await integration._fetch_completed_with_weekly(project_map)
+            await integration._fetch_completed_with_billing(project_map)
         )
 
         # Should handle unknown project gracefully
         assert len(today_tasks) == 1
         assert today_tasks[0]["project_name"] == ""  # Empty string for unknown project
 
-    async def test_fetch_completed_with_weekly_api_error(self, monkeypatch):
-        """Test _fetch_completed_with_weekly handles API errors gracefully."""
+    async def test_fetch_completed_with_billing_api_error(self, monkeypatch):
+        """Test _fetch_completed_with_billing handles API errors gracefully."""
         import httpx
 
         config = {"api_token": "test-token-123"}
@@ -1080,7 +1080,7 @@ class TestTodoistCompletedTasks:
         monkeypatch.setattr(httpx, "AsyncClient", mock_async_client_factory)
 
         today_tasks, weekly_tasks, sparkline = (
-            await integration._fetch_completed_with_weekly(project_map)
+            await integration._fetch_completed_with_billing(project_map)
         )
 
         # Should return empty data on error
@@ -1090,8 +1090,8 @@ class TestTodoistCompletedTasks:
         assert sparkline["total"] == 0
         assert sparkline["bars"] == "▁▁▁▁▁▁▁"
 
-    async def test_fetch_completed_with_weekly_empty_response(self, monkeypatch):
-        """Test _fetch_completed_with_weekly handles empty items list."""
+    async def test_fetch_completed_with_billing_empty_response(self, monkeypatch):
+        """Test _fetch_completed_with_billing handles empty items list."""
         import httpx
 
         config = {"api_token": "test-token-123"}
@@ -1114,7 +1114,7 @@ class TestTodoistCompletedTasks:
         monkeypatch.setattr(httpx, "AsyncClient", mock_async_client_factory)
 
         today_tasks, weekly_tasks, sparkline = (
-            await integration._fetch_completed_with_weekly(project_map)
+            await integration._fetch_completed_with_billing(project_map)
         )
 
         # Should return empty sparkline
@@ -1180,8 +1180,8 @@ class TestTodoistCompletedTasks:
         # All equal values should map to highest bar
         assert result == "████"
 
-    async def test_fetch_completed_with_weekly_empty_completed_at(self, monkeypatch):
-        """Test _fetch_completed_with_weekly skips items with empty completed_at."""
+    async def test_fetch_completed_with_billing_empty_completed_at(self, monkeypatch):
+        """Test _fetch_completed_with_billing skips items with empty completed_at."""
         import httpx
 
         config = {"api_token": "test-token-123"}
@@ -1227,7 +1227,7 @@ class TestTodoistCompletedTasks:
         monkeypatch.setattr(httpx, "AsyncClient", mock_async_client_factory)
 
         today_tasks, weekly_tasks, sparkline = (
-            await integration._fetch_completed_with_weekly(project_map)
+            await integration._fetch_completed_with_billing(project_map)
         )
 
         # Should only include the valid task
@@ -1235,10 +1235,10 @@ class TestTodoistCompletedTasks:
         assert today_tasks[0]["content"] == "Valid task"
         assert sparkline["total"] == 1
 
-    async def test_fetch_completed_with_weekly_old_tasks_outside_window(
+    async def test_fetch_completed_with_billing_old_tasks_outside_window(
         self, monkeypatch
     ):
-        """Test _fetch_completed_with_weekly ignores tasks outside 7-day window."""
+        """Test _fetch_completed_with_billing ignores tasks outside 7-day window."""
         import httpx
 
         config = {"api_token": "test-token-123"}
@@ -1281,7 +1281,7 @@ class TestTodoistCompletedTasks:
         monkeypatch.setattr(httpx, "AsyncClient", mock_async_client_factory)
 
         today_tasks, weekly_tasks, sparkline = (
-            await integration._fetch_completed_with_weekly(project_map)
+            await integration._fetch_completed_with_billing(project_map)
         )
 
         # Old task should be ignored in counts (not in 7-day window)

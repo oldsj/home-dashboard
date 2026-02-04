@@ -219,6 +219,9 @@
         </div>
         <div class="flex items-center gap-2">
           {% if project.target_hours > 0 %}
+          <span class="text-[0.6rem] text-command-cyan/40 tracking-wider"
+            >BILLING</span
+          >
           <span
             class="text-[0.7rem] {% if project.over_target %}text-command-green{% else %}text-command-amber/60{% endif %} font-mono tracking-wider"
             >{{ '%.1f'|format(project.total_hours) }}/{{

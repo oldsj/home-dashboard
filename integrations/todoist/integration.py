@@ -48,7 +48,11 @@ class TodoistConfig(IntegrationConfig):
     )
     work_project_targets: dict[str, float] = Field(
         default={},
-        description="Map of sub-project names to weekly target hours (e.g., {'foodtrails': 20})",
+        description="Map of sub-project names to billing target hours (e.g., {'Foodtrails': 20})",
+    )
+    billing_since: str = Field(
+        default="",
+        description="ISO date (YYYY-MM-DD) to start counting hours. Update after billing to reset.",
     )
 
 
@@ -166,14 +170,14 @@ class TodoistIntegration(BaseIntegration):
             today_tasks.sort(key=lambda t: t["priority"], reverse=True)
             overdue_tasks.sort(key=lambda t: t["priority"], reverse=True)
 
-            # Fetch completed tasks for today, this week, and weekly sparkline
-            completed_tasks, weekly_completed, weekly_sparkline = (
-                await self._fetch_completed_with_weekly(project_map)
+            # Fetch completed tasks for today, billing period, and weekly sparkline
+            completed_tasks, billing_completed, weekly_sparkline = (
+                await self._fetch_completed_with_billing(project_map)
             )
 
-            # Process work sub-projects with hours tracking (uses weekly completed)
+            # Process work sub-projects with hours tracking (uses billing period)
             work_projects, work_project_ids = self._process_work_projects(
-                weekly_completed, today_tasks, project_map, project_parent_map
+                billing_completed, today_tasks, project_map, project_parent_map
             )
 
             # Filter out work sub-project tasks from general queues
@@ -202,19 +206,30 @@ class TodoistIntegration(BaseIntegration):
             logger.error(f"Error fetching Todoist data: {e}")
             raise
 
-    async def _fetch_completed_with_weekly(
+    async def _fetch_completed_with_billing(
         self, project_map: dict[str, str]
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
         """
-        Fetch completed tasks for current week (Monday-Sunday).
+        Fetch completed tasks since billing_since date for hours tracking.
 
         Returns:
-            Tuple of (today's completed tasks, this week's completed tasks, weekly sparkline data)
+            Tuple of (today's completed tasks, billing period tasks, weekly sparkline data)
         """
         api_token = self.get_config_value("api_token")
         today = datetime.now().date()
-        # Calculate Monday of current week (weekday() returns 0 for Monday)
+        # Calculate Monday of current week for sparkline
         week_start = today - timedelta(days=today.weekday())
+
+        # Get billing period start date
+        billing_since_str = self.get_config_value("billing_since", "")
+        if billing_since_str:
+            billing_start = datetime.fromisoformat(billing_since_str).date()
+        else:
+            # Default to 30 days ago if not configured
+            billing_start = today - timedelta(days=30)
+
+        # Use the earlier of week_start or billing_start for the API call
+        fetch_since = min(week_start, billing_start)
 
         # Initialize daily counts for current week (Mon-Sun)
         daily_counts: dict[str, int] = {}
@@ -228,7 +243,7 @@ class TodoistIntegration(BaseIntegration):
                     "https://api.todoist.com/sync/v9/completed/get_all",
                     headers={"Authorization": f"Bearer {api_token}"},
                     data={
-                        "since": f"{week_start.isoformat()}T00:00:00",
+                        "since": f"{fetch_since.isoformat()}T00:00:00",
                         "limit": "200",
                     },
                     timeout=30.0,
@@ -237,9 +252,9 @@ class TodoistIntegration(BaseIntegration):
                 data = response.json()
 
                 today_tasks = []
-                weekly_tasks = []
+                billing_tasks = []
                 today_str = today.isoformat()
-                week_start_str = week_start.isoformat()
+                billing_start_str = billing_start.isoformat()
 
                 items = data.get("items", [])
                 logger.debug(f"Sync API returned {len(items)} completed items")
@@ -282,15 +297,15 @@ class TodoistIntegration(BaseIntegration):
                     if completed_date == today_str:
                         today_tasks.append(task_dict)
 
-                    # Collect all weekly tasks for work project tracking
-                    if completed_date >= week_start_str:
-                        weekly_tasks.append(task_dict)
+                    # Collect all billing period tasks for hours tracking
+                    if completed_date >= billing_start_str:
+                        billing_tasks.append(task_dict)
 
                 # Sort tasks by completion time, most recent first
                 today_tasks.sort(
                     key=lambda t: t.get("completed_at") or "", reverse=True
                 )
-                weekly_tasks.sort(
+                billing_tasks.sort(
                     key=lambda t: t.get("completed_at") or "", reverse=True
                 )
 
@@ -304,7 +319,7 @@ class TodoistIntegration(BaseIntegration):
                     "bars": self._counts_to_sparkline(counts),
                 }
 
-                return today_tasks, weekly_tasks, sparkline
+                return today_tasks, billing_tasks, sparkline
 
         except Exception as e:
             logger.warning(f"Failed to fetch completed tasks: {e}")
