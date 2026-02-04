@@ -218,7 +218,11 @@
           </h3>
         </div>
         <div class="flex items-center gap-2">
-          {% if project.target_hours > 0 %}
+          {% if project.today_hours > 0 %}
+          <span class="text-[0.6rem] text-command-green/50 font-mono"
+            >+{{ '%.1f'|format(project.today_hours) }}h</span
+          >
+          {% endif %} {% if project.target_hours > 0 %}
           <span class="text-[0.6rem] text-command-cyan/40 tracking-wider"
             >BILLING</span
           >
@@ -254,7 +258,7 @@
       </div>
       {% endif %} {# Active tasks for this project #} {% if project.active_tasks
       %}
-      <div class="space-y-1">
+      <div class="space-y-1 mb-2">
         {% for task in project.active_tasks %}
         <div
           class="bg-command-panel/30 border-l-2 border-command-amber/40 p-1.5"
@@ -265,7 +269,31 @@
         </div>
         {% endfor %}
       </div>
-      {% elif project.total_hours == 0 %}
+      {% endif %} {# Today's completed tasks #} {% if project.today_completed %}
+      <div class="space-y-1">
+        {% for task in project.today_completed %}
+        <div
+          class="bg-command-darker/60 border-l-2 border-command-green/30 p-1.5"
+        >
+          <div class="flex items-center justify-between gap-2">
+            <div
+              class="text-[0.7rem] text-command-green/50 leading-tight truncate"
+            >
+              {{ task.content }}
+            </div>
+            {% if task.duration %}
+            <span
+              class="text-[0.6rem] text-command-green/40 font-mono flex-shrink-0"
+              >{% if task.duration.unit == 'minute' %}{{
+              '%.1f'|format(task.duration.amount / 60) }}h{% else %}{{
+              task.duration.amount }}h{% endif %}</span
+            >
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% elif not project.active_tasks and project.total_hours == 0 %}
       <div class="text-center py-2">
         <div class="text-[0.65rem] text-command-amber/30 tracking-widest">
           [ NO_ACTIVITY ]

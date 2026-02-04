@@ -461,6 +461,19 @@ class TodoistIntegration(BaseIntegration):
             )
             total_hours = total_minutes / 60.0 if total_minutes > 0 else 0
 
+            # Filter and calculate today's completed tasks
+            today_str = datetime.now().date().isoformat()
+            today_completed = [
+                t
+                for t in project_completed
+                if t.get("completed_at", "")[:10] == today_str
+            ]
+            today_minutes = sum(
+                self._parse_duration_to_minutes(t.get("duration"))
+                for t in today_completed
+            )
+            today_hours = today_minutes / 60.0 if today_minutes > 0 else 0
+
             # Get target hours for this project
             target_hours = targets.get(project_name, 0)
             progress_percent = (
@@ -472,8 +485,10 @@ class TodoistIntegration(BaseIntegration):
                     "id": project_id,
                     "name": project_name,
                     "completed_tasks": project_completed[:5],  # Limit to 5
+                    "today_completed": today_completed,
                     "active_tasks": project_active[:3],  # Limit to 3
                     "total_hours": total_hours,
+                    "today_hours": today_hours,
                     "target_hours": target_hours,
                     "progress_percent": min(progress_percent, 100),  # Cap at 100%
                     "over_target": progress_percent > 100,
