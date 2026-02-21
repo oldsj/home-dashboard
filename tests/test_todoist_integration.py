@@ -942,7 +942,7 @@ class TestTodoistCompletedTasks:
         projects = await mock_api.get_projects()
         project_map = {p.id: p.name for p in projects}
 
-        # Mock httpx response with completed tasks
+        # Mock httpx response with completed tasks (API v1 format)
         today = datetime.now().date()
         yesterday = (today - timedelta(days=1)).isoformat()
         today_str = today.isoformat()
@@ -951,48 +951,35 @@ class TestTodoistCompletedTasks:
         mock_response.json.return_value = {
             "items": [
                 {
-                    "id": "1",
-                    "task_id": "task1",
-                    "v2_task_id": "v2task1",
+                    "id": "task1",
                     "content": "Completed today 1",
-                    "project_id": "123",
-                    "v2_project_id": "proj1",
+                    "project_id": "proj1",
                     "completed_at": f"{today_str}T10:00:00Z",
+                    "duration": {"amount": 30, "unit": "minute"},
                 },
                 {
-                    "id": "2",
-                    "v2_task_id": "v2task2",
+                    "id": "task2",
                     "content": "Completed today 2",
-                    "project_id": "456",
-                    "v2_project_id": "proj2",
+                    "project_id": "proj2",
                     "completed_at": f"{today_str}T14:30:00Z",
+                    "duration": {"amount": 60, "unit": "minute"},
                 },
                 {
-                    "id": "3",
-                    "v2_task_id": "v2task3",
+                    "id": "task3",
                     "content": "Completed yesterday",
-                    "project_id": "123",
-                    "v2_project_id": "proj1",
+                    "project_id": "proj1",
                     "completed_at": f"{yesterday}T12:00:00Z",
+                    "duration": None,
                 },
-            ]
+            ],
+            "next_cursor": None,
         }
         mock_response.raise_for_status = MagicMock()
-
-        # Mock GET response for duration fetch
-        mock_get_response = MagicMock()
-        mock_get_response.status_code = 200
-        mock_get_response.json.return_value = {
-            "duration": {"amount": 30, "unit": "minute"}
-        }
 
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client.get = AsyncMock(return_value=mock_get_response)
-
-        # Mock httpx.AsyncClient context manager
+        mock_client.get = AsyncMock(return_value=mock_response)
 
         def mock_async_client_factory(*args, **kwargs):
             return mock_client
@@ -1036,15 +1023,17 @@ class TestTodoistCompletedTasks:
                     "content": "Task with unknown project",
                     "project_id": "unknown_proj",
                     "completed_at": f"{today_str}T10:00:00Z",
+                    "duration": None,
                 }
-            ]
+            ],
+            "next_cursor": None,
         }
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.get = AsyncMock(return_value=mock_response)
 
         def mock_async_client_factory(*args, **kwargs):
             return mock_client
@@ -1072,7 +1061,7 @@ class TestTodoistCompletedTasks:
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client.post = AsyncMock(side_effect=Exception("API error"))
+        mock_client.get = AsyncMock(side_effect=Exception("API error"))
 
         def mock_async_client_factory(*args, **kwargs):
             return mock_client
@@ -1100,13 +1089,13 @@ class TestTodoistCompletedTasks:
         project_map = {}
 
         mock_response = MagicMock()
-        mock_response.json.return_value = {"items": []}  # Empty items
+        mock_response.json.return_value = {"items": [], "next_cursor": None}
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.get = AsyncMock(return_value=mock_response)
 
         def mock_async_client_factory(*args, **kwargs):
             return mock_client
@@ -1198,6 +1187,7 @@ class TestTodoistCompletedTasks:
                     "id": "1",
                     "content": "Task without completed_at",
                     "project_id": "proj1",
+                    "duration": None,
                     # No completed_at field
                 },
                 {
@@ -1205,21 +1195,24 @@ class TestTodoistCompletedTasks:
                     "content": "Task with empty completed_at",
                     "project_id": "proj1",
                     "completed_at": "",  # Empty string
+                    "duration": None,
                 },
                 {
                     "id": "3",
                     "content": "Valid task",
                     "project_id": "proj1",
                     "completed_at": f"{today_str}T10:00:00Z",
+                    "duration": {"amount": 30, "unit": "minute"},
                 },
-            ]
+            ],
+            "next_cursor": None,
         }
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.get = AsyncMock(return_value=mock_response)
 
         def mock_async_client_factory(*args, **kwargs):
             return mock_client
@@ -1259,21 +1252,24 @@ class TestTodoistCompletedTasks:
                     "content": "Old task",
                     "project_id": "proj1",
                     "completed_at": f"{old_date}T10:00:00Z",
+                    "duration": None,
                 },
                 {
                     "id": "2",
                     "content": "Recent task",
                     "project_id": "proj1",
                     "completed_at": f"{today_str}T14:00:00Z",
+                    "duration": None,
                 },
-            ]
+            ],
+            "next_cursor": None,
         }
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.get = AsyncMock(return_value=mock_response)
 
         def mock_async_client_factory(*args, **kwargs):
             return mock_client
