@@ -9,7 +9,7 @@ dashboard:
 
 layout:
   columns: 3
-  rows: 2
+  rows: 3
   gap: 16 # pixels between widgets
   padding: 16 # pixels around edge
   widgets:
@@ -24,4 +24,10 @@ layout:
         row: 1
         col: 3
         width: 1
-        height: 2
+        height: 3
+    - integration: fitness
+      position:
+        row: 3
+        col: 1
+        width: 2
+        height: 1

@@ -239,59 +239,36 @@ class TodoistIntegration(BaseIntegration):
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    "https://api.todoist.com/sync/v9/completed/get_all",
-                    headers={"Authorization": f"Bearer {api_token}"},
-                    data={
-                        "since": f"{fetch_since.isoformat()}T00:00:00",
-                        "limit": "200",
-                    },
-                    timeout=30.0,
+                # Use Todoist API v1 which returns duration directly
+                all_items = await self._fetch_all_completed_pages(
+                    client, api_token, fetch_since, today
                 )
-                response.raise_for_status()
-                data = response.json()
 
                 today_tasks = []
                 billing_tasks = []
                 today_str = today.isoformat()
                 billing_start_str = billing_start.isoformat()
 
-                items = data.get("items", [])
-                logger.debug(f"Sync API returned {len(items)} completed items")
+                logger.debug(f"API v1 returned {len(all_items)} completed items")
 
-                # Collect task IDs that need duration lookup
-                tasks_needing_duration: list[dict[str, Any]] = []
-
-                for item in items:
+                for item in all_items:
                     completed_at = item.get("completed_at", "")
-                    if completed_at:
-                        # Extract date from ISO timestamp
-                        completed_date = completed_at[:10]
-                        if completed_date in daily_counts:
-                            daily_counts[completed_date] += 1
+                    if not completed_at:
+                        continue
 
-                        # Build task dict - use v2_project_id for new ID format
-                        v2_project_id = item.get("v2_project_id")
-                        v2_task_id = item.get("v2_task_id")
-                        task_dict = {
-                            "id": v2_task_id or item.get("task_id"),
-                            "content": item.get("content", ""),
-                            "project_id": v2_project_id,
-                            "project_name": project_map.get(v2_project_id, ""),
-                            "duration": None,  # Will be fetched via REST API
-                            "completed_at": completed_at,
-                            "completed_date": completed_date,
-                        }
-                        tasks_needing_duration.append(task_dict)
+                    # Extract date from ISO timestamp
+                    completed_date = completed_at[:10]
+                    if completed_date in daily_counts:
+                        daily_counts[completed_date] += 1
 
-                # Fetch duration for tasks via REST API (batched)
-                await self._fetch_task_durations(
-                    client, api_token, tasks_needing_duration
-                )
-
-                # Now categorize tasks
-                for task_dict in tasks_needing_duration:
-                    completed_date = task_dict.pop("completed_date")
+                    task_dict = {
+                        "id": item.get("id"),
+                        "content": item.get("content", ""),
+                        "project_id": item.get("project_id"),
+                        "project_name": project_map.get(item.get("project_id", ""), ""),
+                        "duration": item.get("duration"),
+                        "completed_at": completed_at,
+                    }
 
                     # Collect today's tasks for the list
                     if completed_date == today_str:
@@ -325,39 +302,60 @@ class TodoistIntegration(BaseIntegration):
             logger.warning(f"Failed to fetch completed tasks: {e}")
             return [], [], {"counts": [0] * 7, "max": 0, "total": 0, "bars": "▁▁▁▁▁▁▁"}
 
-    async def _fetch_task_durations(
+    async def _fetch_all_completed_pages(
         self,
         client: httpx.AsyncClient,
         api_token: str,
-        tasks: list[dict[str, Any]],
-    ) -> None:
+        since: Any,
+        until: Any,
+    ) -> list[dict[str, Any]]:
         """
-        Fetch duration for completed tasks via REST API.
+        Fetch all completed tasks using API v1 with pagination.
 
-        The Sync API doesn't include duration for completed tasks,
-        so we fetch each task individually via REST API v2.
+        Uses the /api/v1/tasks/completed/by_completion_date endpoint which
+        returns duration directly, unlike the old Sync API.
 
         Args:
             client: HTTP client to use
             api_token: Todoist API token
-            tasks: List of task dicts to update with duration (modified in place)
-        """
-        for task in tasks:
-            task_id = task.get("id")
-            if not task_id:
-                continue
+            since: Start date for completion range
+            until: End date for completion range (exclusive next day)
 
-            try:
-                resp = await client.get(
-                    f"https://api.todoist.com/rest/v2/tasks/{task_id}",
-                    headers={"Authorization": f"Bearer {api_token}"},
-                    timeout=10.0,
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    task["duration"] = data.get("duration")
-            except Exception as e:
-                logger.debug(f"Failed to fetch duration for task {task_id}: {e}")
+        Returns:
+            List of completed task dicts with duration included
+        """
+        all_items: list[dict[str, Any]] = []
+        cursor: str | None = None
+        # Fetch until end of 'until' day
+        until_dt = f"{(until + timedelta(days=1)).isoformat()}T00:00:00Z"
+        since_dt = f"{since.isoformat()}T00:00:00Z"
+
+        while True:
+            params: dict[str, Any] = {
+                "since": since_dt,
+                "until": until_dt,
+                "limit": 200,
+            }
+            if cursor:
+                params["cursor"] = cursor
+
+            resp = await client.get(
+                "https://api.todoist.com/api/v1/tasks/completed/by_completion_date",
+                headers={"Authorization": f"Bearer {api_token}"},
+                params=params,
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            items = data.get("items", [])
+            all_items.extend(items)
+
+            cursor = data.get("next_cursor")
+            if not cursor or not items:
+                break
+
+        return all_items
 
     def _counts_to_sparkline(self, counts: list[int]) -> str:
         """Convert counts to sparkline characters."""
